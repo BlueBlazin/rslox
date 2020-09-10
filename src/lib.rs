@@ -1,4 +1,8 @@
 mod chunk;
+mod debug;
+mod opcodes;
+mod value;
+mod vm;
 
 #[cfg(test)]
 mod tests {
