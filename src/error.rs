@@ -4,6 +4,7 @@ pub enum LoxError {
     RuntimeError,
     StackOverflow,
     StackUnderflow,
+    UnexpectedToken,
 }
 
 pub type Result<T> = std::result::Result<T, LoxError>;
