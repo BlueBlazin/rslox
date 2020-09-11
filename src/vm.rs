@@ -1,4 +1,5 @@
 use crate::chunk::Chunk;
+use crate::error::{LoxError, Result};
 use crate::opcodes::OpCode;
 use crate::value::Value;
 
@@ -11,14 +12,6 @@ macro_rules! binary_op {
         $self.push(a $op b)?;
         break;
     }};
-}
-
-#[derive(Debug)]
-pub enum InterpreterError {
-    CompileError,
-    RuntimeError,
-    StackOverflow,
-    StackUnderflow,
 }
 
 pub struct Vm {
@@ -38,14 +31,14 @@ impl Vm {
         }
     }
 
-    pub fn interpret(&mut self, chunk: Chunk) -> Result<(), InterpreterError> {
+    pub fn interpret(&mut self, chunk: Chunk) -> Result<()> {
         self.chunk = chunk;
         self.ip = 0;
 
         self.run()
     }
 
-    fn run(&mut self) -> Result<(), InterpreterError> {
+    fn run(&mut self) -> Result<()> {
         loop {
             match OpCode::from(self.fetch()) {
                 OpCode::Return => {
@@ -85,21 +78,21 @@ impl Vm {
     }
 
     #[inline]
-    fn push(&mut self, value: Value) -> Result<(), InterpreterError> {
+    fn push(&mut self, value: Value) -> Result<()> {
         if self.sp < STACK_MAX {
             self.stack[self.sp] = value;
             self.sp += 1;
 
             Ok(())
         } else {
-            Err(InterpreterError::StackOverflow)
+            Err(LoxError::StackOverflow)
         }
     }
 
     #[inline]
-    fn pop(&mut self) -> Result<Value, InterpreterError> {
+    fn pop(&mut self) -> Result<Value> {
         if self.sp == 0 {
-            Err(InterpreterError::StackUnderflow)
+            Err(LoxError::StackUnderflow)
         } else {
             self.sp -= 1;
             Ok(self.stack[self.sp])

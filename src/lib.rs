@@ -1,6 +1,10 @@
 mod chunk;
+mod compiler;
 mod debug;
+mod error;
 mod opcodes;
+mod scanner;
+mod token;
 mod value;
 mod vm;
 
