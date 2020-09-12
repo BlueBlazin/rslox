@@ -204,8 +204,19 @@ mod tests {
 
     #[test]
     fn test_number() {
-        let mut scanner = Scanner::new("3.14".chars());
+        let source = r#"
+            fun fib(n) {
+                if (n < 2) return n;
+                return fib(n - 2) + fib(n - 1);
+            }
+            
+            var start = clock();
+            print fib(35) == 9227465;
+            print clock() - start;
+        "#;
 
-        println!("{:?}", scanner.next());
+        let scanner = Scanner::new(source.chars());
+
+        println!("{:#?}", scanner.collect::<Vec<_>>());
     }
 }
