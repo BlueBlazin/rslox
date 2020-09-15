@@ -1,4 +1,5 @@
 mod chunk;
+mod codegen;
 mod compiler;
 mod debug;
 mod error;

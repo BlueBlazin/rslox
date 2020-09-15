@@ -48,3 +48,20 @@ pub enum TokenType {
     Var,
     While,
 }
+
+impl TokenType {
+    pub fn precedence(&self) -> usize {
+        match self {
+            TokenType::Equal => 1,
+            TokenType::Or => 2,
+            TokenType::And => 3,
+            TokenType::EqualEq | TokenType::BangEq => 4,
+            TokenType::Less | TokenType::LessEq | TokenType::Greater | TokenType::GreaterEq => 5,
+            TokenType::Plus | TokenType::Minus => 6,
+            TokenType::Star | TokenType::Slash => 7,
+            TokenType::Bang => 8,
+            TokenType::Dot => 9,
+            _ => 0,
+        }
+    }
+}
