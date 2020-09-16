@@ -5,10 +5,11 @@ use crate::opcodes::OpCode;
 use crate::scanner::Scanner;
 use crate::token::{Token, TokenType};
 use crate::value::Value;
+use std::iter::Peekable;
 use std::str::Chars;
 
 pub struct Compiler<'a> {
-    scanner: Scanner<'a>,
+    scanner: Peekable<Scanner<'a>>,
     pub line: usize,
     pub chunk: Chunk,
 }
@@ -16,18 +17,29 @@ pub struct Compiler<'a> {
 impl<'a> Compiler<'a> {
     pub fn new(source: Chars<'a>) -> Self {
         Self {
-            scanner: Scanner::new(source),
+            scanner: Scanner::new(source).peekable(),
             line: 0,
             chunk: Chunk::new(String::from("0")),
         }
     }
 
     fn expression(&mut self) -> Result<()> {
-        unimplemented!()
+        self.parse_precedence(TokenType::Equal.precedence())
     }
 
-    fn parse_precedence(&mut self, rbp: usize) -> Result<()> {
-        unimplemented!()
+    fn parse_precedence(&mut self, precedence: usize) -> Result<()> {
+        self.prefix()?;
+
+        loop {
+            match self.peek() {
+                Some(tok_type) if precedence <= tok_type.precedence() => {
+                    self.infix()?;
+                }
+                _ => break,
+            }
+        }
+
+        Ok(())
     }
 
     fn binary(&mut self) -> Result<()> {
@@ -46,14 +58,44 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn prefix(&mut self) -> Result<()> {
+    fn unary(&mut self) -> Result<()> {
+        let op = self.advance()?.ok_or(LoxError::UnexpectedEOF)?;
+
+        self.expression()?;
+
+        match op {
+            TokenType::Minus => self.emit_byte(OpCode::Negate as u8),
+            _ => return Err(LoxError::UnexpectedToken),
+        }
+
+        Ok(())
+    }
+
+    fn grouping(&mut self) -> Result<()> {
+        self.expect(TokenType::LParen)?;
+
+        self.expression()?;
+
+        self.expect(TokenType::RParen).map(|_| ())
+    }
+
+    fn number(&mut self) -> Result<()> {
         match self.advance()? {
+            Some(TokenType::Num(n)) => self.emit_const(n),
+            _ => return Err(LoxError::UnexpectedToken),
+        }
+
+        Ok(())
+    }
+
+    fn prefix(&mut self) -> Result<()> {
+        match self.peek().ok_or(LoxError::UnexpectedEOF)? {
             _ => unimplemented!(),
         }
     }
 
     fn infix(&mut self) -> Result<()> {
-        match self.advance()? {
+        match self.peek().ok_or(LoxError::UnexpectedEOF)? {
             _ => unimplemented!(),
         }
     }
@@ -66,6 +108,20 @@ impl<'a> Compiler<'a> {
             }
             Some(Err(e)) => Err(e),
             None => Ok(None),
+        }
+    }
+
+    fn peek(&mut self) -> Option<&TokenType> {
+        match self.scanner.peek() {
+            Some(Ok(Token { tok_type, .. })) => Some(tok_type),
+            _ => None,
+        }
+    }
+
+    fn expect(&mut self, expected_type: TokenType) -> Result<TokenType> {
+        match self.advance()? {
+            Some(tok_type) if tok_type == expected_type => Ok(tok_type),
+            _ => Err(LoxError::UnexpectedToken),
         }
     }
 }

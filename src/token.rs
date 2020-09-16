@@ -4,7 +4,7 @@ pub struct Token {
     pub line: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum TokenType {
     LParen,
     RParen,
