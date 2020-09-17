@@ -13,7 +13,7 @@ macro_rules! const_instr {
     ($output:expr, $i:expr, $opcode:expr, $self: expr) => {{
         let constant = $self.code[$i + 1] as usize;
         $output.push_str(&format!(
-            "{:10} {:4} '{}'\n",
+            "{:10} {:4} '{:?}'\n",
             $opcode, constant, $self.constants[constant]
         ));
 
@@ -42,10 +42,9 @@ impl fmt::Debug for Chunk {
                 OpCode::Return => simple_instr!(output, i, opcode),
                 OpCode::Constant => const_instr!(output, i, opcode, self),
                 OpCode::Negate => simple_instr!(output, i, opcode),
-                OpCode::Add => simple_instr!(output, i, opcode),
-                OpCode::Subtract => simple_instr!(output, i, opcode),
-                OpCode::Multiply => simple_instr!(output, i, opcode),
-                OpCode::Divide => simple_instr!(output, i, opcode),
+                OpCode::Add | OpCode::Subtract => simple_instr!(output, i, opcode),
+                OpCode::Multiply | OpCode::Divide => simple_instr!(output, i, opcode),
+                OpCode::Nil | OpCode::True | OpCode::False => simple_instr!(output, i, opcode),
             }
 
             num += 1;

@@ -7,9 +7,16 @@ const STACK_MAX: usize = 256;
 
 macro_rules! binary_op {
     ($op:tt, $self:expr) => {{
-        let b = $self.pop()?;
-        let a = $self.pop()?;
-        $self.push(a $op b)?;
+        let b = $self.pop_number()?;
+        let a = $self.pop_number()?;
+        $self.push(Value::Number(a $op b))?;
+        break;
+    }};
+}
+
+macro_rules! push_value {
+    ($value:expr, $self:expr) => {{
+        $self.push($value)?;
         break;
     }};
 }
@@ -17,7 +24,6 @@ macro_rules! binary_op {
 pub struct Vm {
     chunk: Chunk,
     stack: Vec<Value>,
-    sp: usize,
     ip: usize,
 }
 
@@ -25,8 +31,7 @@ impl Vm {
     pub fn new() -> Self {
         Self {
             chunk: Chunk::new(String::from("")),
-            stack: vec![0.0; STACK_MAX],
-            sp: 0,
+            stack: Vec::with_capacity(STACK_MAX),
             ip: 0,
         }
     }
@@ -47,16 +52,20 @@ impl Vm {
                 }
                 OpCode::Constant => {
                     let value = self.fetch_const();
-                    self.push(value)?;
+                    push_value!(Value::Number(value), self);
                 }
                 OpCode::Negate => {
-                    let value = -self.pop()?;
-                    self.push(value)?;
+                    let value = self.pop_number()?;
+                    push_value!(Value::Number(-value), self);
                 }
                 OpCode::Add => binary_op!(+, self),
                 OpCode::Subtract => binary_op!(-, self),
                 OpCode::Multiply => binary_op!(*, self),
                 OpCode::Divide => binary_op!(/, self),
+
+                OpCode::Nil => push_value!(Value::Nil, self),
+                OpCode::True => push_value!(Value::Bool(true), self),
+                OpCode::False => push_value!(Value::Bool(false), self),
             }
         }
 
@@ -71,7 +80,7 @@ impl Vm {
     }
 
     #[inline]
-    fn fetch_const(&mut self) -> Value {
+    fn fetch_const(&mut self) -> f64 {
         let idx = self.fetch() as usize;
 
         self.chunk.constants[self.chunk.code[idx] as usize]
@@ -79,9 +88,8 @@ impl Vm {
 
     #[inline]
     fn push(&mut self, value: Value) -> Result<()> {
-        if self.sp < STACK_MAX {
-            self.stack[self.sp] = value;
-            self.sp += 1;
+        if self.stack.len() < STACK_MAX {
+            self.stack.push(value);
 
             Ok(())
         } else {
@@ -91,11 +99,13 @@ impl Vm {
 
     #[inline]
     fn pop(&mut self) -> Result<Value> {
-        if self.sp == 0 {
-            Err(LoxError::StackUnderflow)
-        } else {
-            self.sp -= 1;
-            Ok(self.stack[self.sp])
+        self.stack.pop().ok_or(LoxError::StackUnderflow)
+    }
+
+    fn pop_number(&mut self) -> Result<f64> {
+        match self.pop()? {
+            Value::Number(n) => Ok(n),
+            _ => Err(LoxError::TypeError),
         }
     }
 }
@@ -122,6 +132,6 @@ mod tests {
         let mut vm = Vm::new();
 
         vm.interpret(chunk).unwrap();
-        assert_eq!(&3.0, &vm.stack[0]);
+        assert_eq!(&Value::Number(3.0), &vm.stack[0]);
     }
 }

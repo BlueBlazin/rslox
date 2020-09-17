@@ -6,7 +6,7 @@ pub struct Chunk {
     pub name: String,
     pub code: Vec<u8>,
     pub lines: Vec<usize>,
-    pub constants: Vec<Value>,
+    pub constants: Vec<f64>,
 }
 
 impl Chunk {
@@ -24,7 +24,7 @@ impl Chunk {
         self.lines.push(line);
     }
 
-    pub fn add_constant(&mut self, value: Value) -> u8 {
+    pub fn add_constant(&mut self, value: f64) -> u8 {
         self.constants.push(value);
         // TODO: There is a bug here when constants.len >= 256
         self.constants.len() as u8 - 1

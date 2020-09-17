@@ -88,8 +88,20 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
+    fn literal(&mut self) -> Result<()> {
+        match self.advance()? {
+            Some(TokenType::Nil) => self.emit_byte(OpCode::Nil as u8),
+            Some(TokenType::True) => self.emit_byte(OpCode::True as u8),
+            Some(TokenType::False) => self.emit_byte(OpCode::False as u8),
+            _ => unreachable!(),
+        }
+
+        Ok(())
+    }
+
     fn prefix(&mut self) -> Result<()> {
         match self.peek().ok_or(LoxError::UnexpectedEOF)? {
+            TokenType::Nil | TokenType::True | TokenType::False => self.literal(),
             _ => unimplemented!(),
         }
     }

@@ -11,8 +11,13 @@ mod vm;
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
+    fn test_sandbox() {
+        let mut compiler = compiler::Compiler::new("true".chars());
+        let mut vm = vm::Vm::new();
+
+        // vm.interpret(chunk);
     }
 }
