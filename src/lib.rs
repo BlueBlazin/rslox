@@ -15,9 +15,13 @@ mod tests {
 
     #[test]
     fn test_sandbox() {
-        let mut compiler = compiler::Compiler::new("true".chars());
+        let mut compiler = compiler::Compiler::new("1 + 1".chars());
         let mut vm = vm::Vm::new();
 
-        // vm.interpret(chunk);
+        compiler.expression().unwrap();
+
+        vm.interpret(compiler.chunk).unwrap();
+
+        println!("{:?}", vm.stack);
     }
 }

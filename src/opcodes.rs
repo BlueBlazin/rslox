@@ -10,6 +10,10 @@ pub enum OpCode {
     Nil,
     True,
     False,
+    Not,
+    Equal,
+    Greater,
+    Less,
 }
 
 impl From<u8> for OpCode {
@@ -25,6 +29,10 @@ impl From<u8> for OpCode {
             0x07 => OpCode::Nil,
             0x08 => OpCode::True,
             0x09 => OpCode::False,
+            0x0A => OpCode::Not,
+            0x0B => OpCode::Equal,
+            0x0C => OpCode::Greater,
+            0x0D => OpCode::Less,
             _ => panic!("Byte doesn't map to any opcode."),
         }
     }

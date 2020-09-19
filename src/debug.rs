@@ -45,6 +45,8 @@ impl fmt::Debug for Chunk {
                 OpCode::Add | OpCode::Subtract => simple_instr!(output, i, opcode),
                 OpCode::Multiply | OpCode::Divide => simple_instr!(output, i, opcode),
                 OpCode::Nil | OpCode::True | OpCode::False => simple_instr!(output, i, opcode),
+                OpCode::Not => simple_instr!(output, i, opcode),
+                OpCode::Equal | OpCode::Greater | OpCode::Less => simple_instr!(output, i, opcode),
             }
 
             num += 1;

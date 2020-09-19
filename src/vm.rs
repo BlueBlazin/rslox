@@ -10,28 +10,32 @@ macro_rules! binary_op {
         let b = $self.pop_number()?;
         let a = $self.pop_number()?;
         $self.push(Value::Number(a $op b))?;
-        break;
+    }};
+
+    ($op:tt, $self:expr, $type:tt) => {{
+        let b = $self.pop_number()?;
+        let a = $self.pop_number()?;
+        $self.push(Value::$type(a $op b))?;
     }};
 }
 
 macro_rules! push_value {
     ($value:expr, $self:expr) => {{
         $self.push($value)?;
-        break;
     }};
 }
 
 pub struct Vm {
+    pub stack: Vec<Value>,
     chunk: Chunk,
-    stack: Vec<Value>,
     ip: usize,
 }
 
 impl Vm {
     pub fn new() -> Self {
         Self {
-            chunk: Chunk::new(String::from("")),
             stack: Vec::with_capacity(STACK_MAX),
+            chunk: Chunk::new(String::from("")),
             ip: 0,
         }
     }
@@ -66,6 +70,13 @@ impl Vm {
                 OpCode::Nil => push_value!(Value::Nil, self),
                 OpCode::True => push_value!(Value::Bool(true), self),
                 OpCode::False => push_value!(Value::Bool(false), self),
+                OpCode::Not => {
+                    let value = self.pop()?.is_falsey();
+                    push_value!(Value::Bool(value), self);
+                }
+                OpCode::Equal => binary_op!(==, self, Bool),
+                OpCode::Greater => binary_op!(>, self, Bool),
+                OpCode::Less => binary_op!(<, self, Bool),
             }
         }
 

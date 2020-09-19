@@ -23,7 +23,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn expression(&mut self) -> Result<()> {
+    pub fn expression(&mut self) -> Result<()> {
         self.parse_precedence(TokenType::Equal.precedence())
     }
 
@@ -52,6 +52,12 @@ impl<'a> Compiler<'a> {
             TokenType::Minus => self.emit_byte(OpCode::Subtract as u8),
             TokenType::Star => self.emit_byte(OpCode::Multiply as u8),
             TokenType::Slash => self.emit_byte(OpCode::Divide as u8),
+            TokenType::BangEq => self.emit_bytes(OpCode::Equal as u8, OpCode::Not as u8),
+            TokenType::EqualEq => self.emit_byte(OpCode::Equal as u8),
+            TokenType::Greater => self.emit_byte(OpCode::Greater as u8),
+            TokenType::GreaterEq => self.emit_bytes(OpCode::Less as u8, OpCode::Not as u8),
+            TokenType::Less => self.emit_byte(OpCode::Less as u8),
+            TokenType::LessEq => self.emit_bytes(OpCode::Greater as u8, OpCode::Not as u8),
             _ => return Err(LoxError::UnexpectedToken),
         }
 
@@ -65,6 +71,7 @@ impl<'a> Compiler<'a> {
 
         match op {
             TokenType::Minus => self.emit_byte(OpCode::Negate as u8),
+            TokenType::Bang => self.emit_byte(OpCode::Not as u8),
             _ => return Err(LoxError::UnexpectedToken),
         }
 
@@ -102,12 +109,18 @@ impl<'a> Compiler<'a> {
     fn prefix(&mut self) -> Result<()> {
         match self.peek().ok_or(LoxError::UnexpectedEOF)? {
             TokenType::Nil | TokenType::True | TokenType::False => self.literal(),
+            TokenType::Bang => self.unary(),
             _ => unimplemented!(),
         }
     }
 
     fn infix(&mut self) -> Result<()> {
         match self.peek().ok_or(LoxError::UnexpectedEOF)? {
+            TokenType::EqualEq
+            | TokenType::Less
+            | TokenType::LessEq
+            | TokenType::Greater
+            | TokenType::GreaterEq => self.binary(),
             _ => unimplemented!(),
         }
     }
