@@ -108,15 +108,22 @@ impl<'a> Compiler<'a> {
 
     fn prefix(&mut self) -> Result<()> {
         match self.peek().ok_or(LoxError::UnexpectedEOF)? {
+            TokenType::LParen => self.grouping(),
+            TokenType::Minus | TokenType::Bang => self.unary(),
+            TokenType::Num(_) => self.number(),
             TokenType::Nil | TokenType::True | TokenType::False => self.literal(),
-            TokenType::Bang => self.unary(),
             _ => unimplemented!(),
         }
     }
 
     fn infix(&mut self) -> Result<()> {
         match self.peek().ok_or(LoxError::UnexpectedEOF)? {
-            TokenType::EqualEq
+            TokenType::Plus
+            | TokenType::Minus
+            | TokenType::Star
+            | TokenType::Slash
+            | TokenType::BangEq
+            | TokenType::EqualEq
             | TokenType::Less
             | TokenType::LessEq
             | TokenType::Greater

@@ -15,7 +15,7 @@ impl Chunk {
             name,
             code: Vec::with_capacity(8),
             lines: Vec::with_capacity(8),
-            constants: Vec::with_capacity(2),
+            constants: Vec::with_capacity(4),
         }
     }
 
