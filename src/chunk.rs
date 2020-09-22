@@ -1,12 +1,14 @@
 use crate::opcodes::OpCode;
 use crate::value::Value;
+use std::cell::RefCell;
 use std::fmt;
+use std::rc::Rc;
 
 pub struct Chunk {
     pub name: String,
     pub code: Vec<u8>,
     pub lines: Vec<usize>,
-    pub constants: Vec<f64>,
+    pub constants: Vec<Rc<RefCell<Value>>>,
 }
 
 impl Chunk {
@@ -24,8 +26,8 @@ impl Chunk {
         self.lines.push(line);
     }
 
-    pub fn add_constant(&mut self, value: f64) -> u8 {
-        self.constants.push(value);
+    pub fn add_constant(&mut self, value: Value) -> u8 {
+        self.constants.push(Rc::new(RefCell::new(value)));
         // TODO: There is a bug here when constants.len >= 256
         self.constants.len() as u8 - 1
     }
@@ -38,8 +40,8 @@ mod tests {
     #[test]
     fn test_create_chunk() {
         let mut chunk = Chunk::new(String::from("Test"));
-        chunk.constants.push(7.0);
-        chunk.constants.push(42.0);
+        chunk.add_constant(Value::Number(7.0));
+        chunk.add_constant(Value::Number(42.0));
         chunk.write(OpCode::Add as u8, 0);
         chunk.write(OpCode::Constant as u8, 0);
         chunk.write(1, 0);

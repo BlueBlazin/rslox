@@ -18,7 +18,7 @@ pub struct Obj {
 pub struct ObjString {
     pub obj: Obj,
     pub length: usize,
-    pub chars: Vec<char>,
+    pub string: String,
 }
 
 impl LoxObj for ObjString {
@@ -38,7 +38,7 @@ mod tests {
                 obj_type: ObjType::Str,
             },
             length: 3,
-            chars: vec!['a', 'b', 'c'],
+            string: String::from("abc"),
         });
 
         println!("{:?}", s.as_any().downcast_ref::<ObjString>().unwrap().obj);

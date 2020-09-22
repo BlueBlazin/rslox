@@ -18,7 +18,11 @@ mod tests {
     fn test_sandbox() {
         use codegen::Codegen;
 
-        let mut compiler = compiler::Compiler::new("100 * (2 + 1)".chars());
+        let source = r#"
+            "hello, world" == "foo"
+        "#;
+
+        let mut compiler = compiler::Compiler::new(source.chars());
         let mut vm = vm::Vm::new();
 
         compiler.expression().unwrap();

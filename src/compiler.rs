@@ -1,6 +1,7 @@
 use crate::chunk::Chunk;
 use crate::codegen::Codegen;
 use crate::error::{LoxError, Result};
+use crate::object::{Obj, ObjString, ObjType};
 use crate::opcodes::OpCode;
 use crate::scanner::Scanner;
 use crate::token::{Token, TokenType};
@@ -88,7 +89,7 @@ impl<'a> Compiler<'a> {
 
     fn number(&mut self) -> Result<()> {
         match self.advance()? {
-            Some(TokenType::Num(n)) => self.emit_const(n),
+            Some(TokenType::Num(n)) => self.emit_const(Value::Number(n)),
             _ => return Err(LoxError::UnexpectedToken),
         }
 
@@ -106,12 +107,31 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
+    fn string(&mut self) -> Result<()> {
+        match self.advance()? {
+            Some(TokenType::Str(string)) => {
+                let value = ObjString {
+                    obj: Obj {
+                        obj_type: ObjType::Str,
+                    },
+                    length: string.len(),
+                    string,
+                };
+
+                self.emit_const(Value::Obj(Box::from(value)));
+                Ok(())
+            }
+            _ => Err(LoxError::UnexpectedToken),
+        }
+    }
+
     fn prefix(&mut self) -> Result<()> {
         match self.peek().ok_or(LoxError::UnexpectedEOF)? {
             TokenType::LParen => self.grouping(),
             TokenType::Minus | TokenType::Bang => self.unary(),
             TokenType::Num(_) => self.number(),
             TokenType::Nil | TokenType::True | TokenType::False => self.literal(),
+            TokenType::Str(_) => self.string(),
             _ => unimplemented!(),
         }
     }
@@ -163,7 +183,7 @@ impl<'a> Codegen for Compiler<'a> {
         self.chunk.write(value, self.line);
     }
 
-    fn emit_const(&mut self, value: f64) {
+    fn emit_const(&mut self, value: Value) {
         let constant = self.chunk.add_constant(value);
         self.emit_bytes(OpCode::Constant as u8, constant);
     }

@@ -1,7 +1,7 @@
 use crate::object::LoxObj;
 use std::any::Any;
+use std::fmt;
 
-#[derive(Debug)]
 pub enum Value {
     Obj(Box<dyn LoxObj>),
     Bool(bool),
@@ -14,6 +14,17 @@ impl Value {
         match self {
             Value::Nil | Value::Bool(false) => true,
             _ => false,
+        }
+    }
+}
+
+impl fmt::Debug for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Value::Obj(obj) => write!(f, "{:?}", *obj),
+            Value::Bool(value) => write!(f, "{}", value),
+            Value::Number(value) => write!(f, "{}", value),
+            Value::Nil => write!(f, "Nil"),
         }
     }
 }
