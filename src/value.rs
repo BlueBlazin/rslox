@@ -1,9 +1,9 @@
 use crate::object::LoxObj;
-use std::any::Any;
-use std::fmt;
+use broom::prelude::*;
 
+#[derive(Debug)]
 pub enum Value {
-    Obj(Box<dyn LoxObj>),
+    Obj(LoxObj),
     Bool(bool),
     Number(f64),
     Nil,
@@ -18,34 +18,11 @@ impl Value {
     }
 }
 
-impl fmt::Debug for Value {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Trace<Self> for Value {
+    fn trace(&self, tracer: &mut Tracer<Self>) {
         match self {
-            Value::Obj(obj) => write!(f, "{:?}", *obj),
-            Value::Bool(value) => write!(f, "{}", value),
-            Value::Number(value) => write!(f, "{}", value),
-            Value::Nil => write!(f, "Nil"),
+            Value::Bool(_) | Value::Number(_) | Value::Nil => (),
+            Value::Obj(obj) => unimplemented!(),
         }
     }
 }
-
-// pub trait LoxObj: std::fmt::Debug {}
-
-// #[derive(Debug, PartialEq)]
-// pub enum ObjType {
-//     Str,
-// }
-
-// #[derive(Debug, PartialEq)]
-// pub struct Obj {
-//     pub obj_type: ObjType,
-// }
-
-// #[derive(Debug, PartialEq)]
-// pub struct ObjString {
-//     pub obj: Obj,
-//     pub length: usize,
-//     pub chars: Vec<char>,
-// }
-
-// impl LoxObj for ObjString {}

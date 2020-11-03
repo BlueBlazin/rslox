@@ -1,9 +1,9 @@
-use crate::chunk::Chunk;
+use crate::chunk::{Chunk, Const};
 use crate::error::{LoxError, Result};
+use crate::object::{LoxObj, ObjString};
 use crate::opcodes::OpCode;
 use crate::value::Value;
-use std::cell::RefCell;
-use std::rc::Rc;
+use broom::prelude::*;
 
 const STACK_MAX: usize = 256;
 
@@ -11,24 +11,26 @@ macro_rules! binary_op {
     ($op:tt, $self:expr) => {{
         let b = $self.pop_number()?;
         let a = $self.pop_number()?;
-        $self.push(Rc::new(RefCell::new(Value::Number(a $op b))))?;
+        push_value!(Value::Number(a $op b), $self);
     }};
 
     ($op:tt, $self:expr, $type:tt) => {{
         let b = $self.pop_number()?;
         let a = $self.pop_number()?;
-        $self.push(Rc::new(RefCell::new(Value::$type(a $op b))))?;
+        push_value!(Value::$type(a $op b), $self);
     }};
 }
 
 macro_rules! push_value {
     ($value:expr, $self:expr) => {{
-        $self.push($value)?;
+        let handle = $self.alloc($value);
+        $self.push(handle)?;
     }};
 }
 
 pub struct Vm {
-    pub stack: Vec<Rc<RefCell<Value>>>,
+    pub stack: Vec<Rooted<Value>>,
+    pub heap: Heap<Value>,
     chunk: Chunk,
     ip: usize,
 }
@@ -37,6 +39,7 @@ impl Vm {
     pub fn new() -> Self {
         Self {
             stack: Vec::with_capacity(STACK_MAX),
+            heap: Heap::default(),
             chunk: Chunk::new(String::from("")),
             ip: 0,
         }
@@ -56,26 +59,33 @@ impl Vm {
                     println!("{:?}", self.pop()?);
                     return Ok(());
                 }
-                OpCode::Constant => {
-                    let value = self.fetch_const();
-                    push_value!(value, self);
-                }
+                OpCode::Constant => match self.fetch_const() {
+                    Const::Num(n) => push_value!(Value::Number(n), self),
+                    Const::Str(n) => unimplemented!(),
+                },
                 OpCode::Negate => {
                     let value = self.pop_number()?;
-                    push_value!(Rc::new(RefCell::new(Value::Number(-value))), self);
+                    push_value!(Value::Number(-value), self);
                 }
-                OpCode::Add => binary_op!(+, self),
+                OpCode::Add => binary_op!(-, self),
                 OpCode::Subtract => binary_op!(-, self),
                 OpCode::Multiply => binary_op!(*, self),
                 OpCode::Divide => binary_op!(/, self),
 
-                OpCode::Nil => push_value!(Rc::new(RefCell::new(Value::Nil)), self),
-                OpCode::True => push_value!(Rc::new(RefCell::new(Value::Bool(true))), self),
-                OpCode::False => push_value!(Rc::new(RefCell::new(Value::Bool(false))), self),
+                OpCode::Nil => push_value!(Value::Nil, self),
+                OpCode::True => push_value!(Value::Bool(true), self),
+                OpCode::False => push_value!(Value::Bool(false), self),
 
                 OpCode::Not => {
-                    let value = self.pop()?.borrow().is_falsey();
-                    push_value!(Rc::new(RefCell::new(Value::Bool(value))), self);
+                    let handle = self.pop()?;
+
+                    let value = self
+                        .heap
+                        .get(handle)
+                        .ok_or(LoxError::RuntimeError)?
+                        .is_falsey();
+
+                    push_value!(Value::Bool(value), self);
                 }
                 OpCode::Equal => binary_op!(==, self, Bool),
                 OpCode::Greater => binary_op!(>, self, Bool),
@@ -92,14 +102,14 @@ impl Vm {
     }
 
     #[inline]
-    fn fetch_const(&mut self) -> Rc<RefCell<Value>> {
+    fn fetch_const(&mut self) -> Const {
         let idx = self.fetch() as usize;
 
-        Rc::clone(&self.chunk.constants[idx])
+        self.chunk.constants[idx].clone()
     }
 
     #[inline]
-    fn push(&mut self, value: Rc<RefCell<Value>>) -> Result<()> {
+    fn push(&mut self, value: Rooted<Value>) -> Result<()> {
         if self.stack.len() < STACK_MAX {
             self.stack.push(value);
 
@@ -110,15 +120,21 @@ impl Vm {
     }
 
     #[inline]
-    fn pop(&mut self) -> Result<Rc<RefCell<Value>>> {
+    fn pop(&mut self) -> Result<Rooted<Value>> {
         self.stack.pop().ok_or(LoxError::StackUnderflow)
     }
 
     fn pop_number(&mut self) -> Result<f64> {
-        match *self.pop()?.borrow() {
-            Value::Number(n) => Ok(n),
+        let handle = self.pop()?;
+
+        match self.heap.get(handle) {
+            Some(Value::Number(n)) => Ok(*n),
             _ => Err(LoxError::TypeError),
         }
+    }
+
+    fn alloc(&mut self, value: Value) -> Rooted<Value> {
+        self.heap.insert(value)
     }
 }
 
@@ -131,11 +147,11 @@ mod tests {
     fn test_vm_add() {
         let mut chunk = Chunk::new(String::from("Test"));
 
-        let idx = chunk.add_constant(Value::Number(1.0));
+        let idx = chunk.add_constant(Const::Num(1.0)).unwrap();
         chunk.write(OpCode::Constant as u8, 0);
         chunk.write(idx, 0);
 
-        let idx = chunk.add_constant(Value::Number(2.0));
+        let idx = chunk.add_constant(Const::Num(2.0)).unwrap();
         chunk.write(OpCode::Constant as u8, 0);
         chunk.write(idx, 0);
 
