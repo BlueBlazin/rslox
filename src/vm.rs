@@ -56,18 +56,47 @@ impl Vm {
         loop {
             match OpCode::from(self.fetch()) {
                 OpCode::Return => {
-                    println!("{:?}", self.pop()?);
+                    let handle = self.pop()?;
+                    println!("{:?}", self.heap.get(handle).ok_or(LoxError::RuntimeError)?);
                     return Ok(());
                 }
                 OpCode::Constant => match self.fetch_const() {
                     Const::Num(n) => push_value!(Value::Number(n), self),
-                    Const::Str(n) => unimplemented!(),
+                    Const::Str(s) => push_value!(
+                        Value::Obj(LoxObj::Str(Box::from(ObjString {
+                            length: s.len(),
+                            value: s,
+                        }))),
+                        self
+                    ),
                 },
                 OpCode::Negate => {
                     let value = self.pop_number()?;
                     push_value!(Value::Number(-value), self);
                 }
-                OpCode::Add => binary_op!(-, self),
+                OpCode::Add => {
+                    // binary_op!(+, self)
+                    let handle_b = self.pop()?;
+                    let handle_a = self.pop()?;
+
+                    match (self.heap.get(handle_a), self.heap.get(handle_b)) {
+                        (Some(Value::Number(a)), Some(Value::Number(b))) => {
+                            push_value!(Value::Number(*a + *b), self);
+                        }
+                        (Some(Value::Obj(LoxObj::Str(a))), Some(Value::Obj(LoxObj::Str(b)))) => {
+                            let mut value = String::from(&a.value);
+                            value.push_str(&b.value);
+
+                            let new_str = Value::Obj(LoxObj::Str(Box::from(ObjString {
+                                length: a.length + b.length,
+                                value,
+                            })));
+
+                            push_value!(new_str, self);
+                        }
+                        _ => return Err(LoxError::TypeError),
+                    }
+                }
                 OpCode::Subtract => binary_op!(-, self),
                 OpCode::Multiply => binary_op!(*, self),
                 OpCode::Divide => binary_op!(/, self),
@@ -87,7 +116,20 @@ impl Vm {
 
                     push_value!(Value::Bool(value), self);
                 }
-                OpCode::Equal => binary_op!(==, self, Bool),
+                OpCode::Equal => {
+                    let handle_b = self.pop()?;
+                    let handle_a = self.pop()?;
+
+                    match (self.heap.get(handle_a), self.heap.get(handle_b)) {
+                        (Some(Value::Number(a)), Some(Value::Number(b))) => {
+                            push_value!(Value::Bool(a == b), self);
+                        }
+                        (Some(Value::Obj(LoxObj::Str(a))), Some(Value::Obj(LoxObj::Str(b)))) => {
+                            push_value!(Value::Bool(a.value == b.value), self);
+                        }
+                        _ => return Err(LoxError::TypeError),
+                    }
+                }
                 OpCode::Greater => binary_op!(>, self, Bool),
                 OpCode::Less => binary_op!(<, self, Bool),
             }

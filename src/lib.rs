@@ -19,7 +19,7 @@ mod tests {
         use codegen::Codegen;
 
         let source = r#"
-            "foo" + "foo"
+            "1" + "2"
         "#;
 
         let mut compiler = compiler::Compiler::new(source.chars());
