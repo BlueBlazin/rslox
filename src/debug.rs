@@ -47,6 +47,11 @@ impl fmt::Debug for Chunk {
                 OpCode::Nil | OpCode::True | OpCode::False => simple_instr!(output, i, opcode),
                 OpCode::Not => simple_instr!(output, i, opcode),
                 OpCode::Equal | OpCode::Greater | OpCode::Less => simple_instr!(output, i, opcode),
+                OpCode::Print => simple_instr!(output, i, opcode),
+                OpCode::Pop => simple_instr!(output, i, opcode),
+                OpCode::DefineGlobal => const_instr!(output, i, opcode, self),
+                OpCode::GetGlobal => const_instr!(output, i, opcode, self),
+                OpCode::SetGlobal => const_instr!(output, i, opcode, self),
             }
 
             num += 1;

@@ -14,6 +14,11 @@ pub enum OpCode {
     Equal,
     Greater,
     Less,
+    Print,
+    Pop,
+    DefineGlobal,
+    GetGlobal,
+    SetGlobal,
 }
 
 impl From<u8> for OpCode {
@@ -33,6 +38,11 @@ impl From<u8> for OpCode {
             0x0B => OpCode::Equal,
             0x0C => OpCode::Greater,
             0x0D => OpCode::Less,
+            0x0E => OpCode::Print,
+            0x0F => OpCode::Pop,
+            0x10 => OpCode::DefineGlobal,
+            0x11 => OpCode::GetGlobal,
+            0x12 => OpCode::SetGlobal,
             _ => panic!("Byte doesn't map to any opcode."),
         }
     }

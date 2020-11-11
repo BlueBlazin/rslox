@@ -16,20 +16,28 @@ mod tests {
 
     #[test]
     fn test_sandbox() {
-        use codegen::Codegen;
+        use crate::codegen::Codegen;
+        use crate::opcodes::OpCode;
+        use crate::scanner::Scanner;
 
         let source = r#"
-            "1" + "2"
+            var foo = 1 + 1;
+            foo = 5 * foo;
+            print foo;
         "#;
 
         let mut compiler = compiler::Compiler::new(source.chars());
         let mut vm = vm::Vm::new();
 
-        compiler.expression().unwrap();
-        compiler.emit_byte(opcodes::OpCode::Return as u8);
+        compiler.parse().unwrap();
+        compiler.emit_byte(OpCode::Return as u8);
 
         println!("{:?}", compiler.chunk);
 
         vm.interpret(compiler.chunk).unwrap();
+
+        // let mut scanner = Scanner::new(source.chars());
+        // let tokens: Vec<_> = scanner.collect();
+        // println!("{:?}", tokens);
     }
 }

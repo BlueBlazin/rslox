@@ -24,12 +24,80 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    pub fn parse(&mut self) -> Result<()> {
+        while let Some(_) = self.peek() {
+            self.declaration()?;
+        }
+
+        Ok(())
+    }
+
+    pub fn declaration(&mut self) -> Result<()> {
+        match self.peek() {
+            Some(TokenType::Var) => self.var_declaration(),
+            _ => self.statement(),
+        }
+    }
+
+    fn var_declaration(&mut self) -> Result<()> {
+        self.expect(TokenType::Var)?;
+        let global = self.parse_variable()?;
+
+        match self.peek() {
+            Some(TokenType::Equal) => {
+                self.advance()?;
+                self.expression()?;
+            }
+            _ => self.emit_byte(OpCode::Nil as u8),
+        }
+
+        self.expect(TokenType::Semicolon)?;
+
+        self.define_variable(global)
+    }
+
+    fn parse_variable(&mut self) -> Result<u8> {
+        match self.advance()? {
+            Some(TokenType::Ident(id)) => self.chunk.add_constant(Const::Str(id)),
+            _ => Err(LoxError::UnexpectedToken),
+        }
+    }
+
+    fn define_variable(&mut self, global: u8) -> Result<()> {
+        self.emit_bytes(OpCode::DefineGlobal as u8, global);
+        Ok(())
+    }
+
+    fn statement(&mut self) -> Result<()> {
+        match self.peek() {
+            Some(TokenType::Print) => self.print_statement(),
+            _ => self.expr_statement(),
+        }
+    }
+
+    fn print_statement(&mut self) -> Result<()> {
+        self.expect(TokenType::Print)?;
+        self.expression()?;
+        self.expect(TokenType::Semicolon)?;
+        self.emit_byte(OpCode::Print as u8);
+        Ok(())
+    }
+
+    fn expr_statement(&mut self) -> Result<()> {
+        self.expression()?;
+        self.expect(TokenType::Semicolon)?;
+        self.emit_byte(OpCode::Pop as u8);
+        Ok(())
+    }
+
     pub fn expression(&mut self) -> Result<()> {
         self.parse_precedence(TokenType::Equal.precedence())
     }
 
     fn parse_precedence(&mut self, precedence: usize) -> Result<()> {
-        self.prefix()?;
+        let can_assign = precedence <= TokenType::Equal.precedence();
+
+        self.prefix(can_assign)?;
 
         loop {
             match self.peek() {
@@ -40,7 +108,10 @@ impl<'a> Compiler<'a> {
             }
         }
 
-        Ok(())
+        match self.peek() {
+            Some(TokenType::Equal) if can_assign => Err(LoxError::UnexpectedToken),
+            _ => Ok(()),
+        }
     }
 
     fn binary(&mut self) -> Result<()> {
@@ -112,14 +183,40 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn prefix(&mut self) -> Result<()> {
+    fn variable(&mut self, can_assign: bool) -> Result<()> {
+        let name = self.advance()?.ok_or(LoxError::UnexpectedEOF)?;
+        self.named_variable(name, can_assign)
+    }
+
+    fn named_variable(&mut self, name: TokenType, can_assign: bool) -> Result<()> {
+        match name {
+            TokenType::Ident(s) => {
+                let arg = self.chunk.add_constant(Const::Str(s))?;
+
+                match self.peek() {
+                    Some(TokenType::Equal) if can_assign => {
+                        self.advance()?;
+                        self.expression()?;
+                        self.emit_bytes(OpCode::SetGlobal as u8, arg);
+                    }
+                    _ => self.emit_bytes(OpCode::GetGlobal as u8, arg),
+                }
+
+                Ok(())
+            }
+            _ => Err(LoxError::UnexpectedToken),
+        }
+    }
+
+    fn prefix(&mut self, can_assign: bool) -> Result<()> {
         match self.peek().ok_or(LoxError::UnexpectedEOF)? {
             TokenType::LParen => self.grouping(),
             TokenType::Minus | TokenType::Bang => self.unary(),
             TokenType::Num(_) => self.number(),
             TokenType::Nil | TokenType::True | TokenType::False => self.literal(),
             TokenType::Str(_) => self.string(),
-            _ => unimplemented!(),
+            TokenType::Ident(_) => self.variable(can_assign),
+            t => unimplemented!("{:?}", t),
         }
     }
 

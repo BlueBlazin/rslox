@@ -4,6 +4,7 @@ use crate::object::{LoxObj, ObjString};
 use crate::opcodes::OpCode;
 use crate::value::Value;
 use broom::prelude::*;
+use std::collections::HashMap;
 
 const STACK_MAX: usize = 256;
 
@@ -31,6 +32,7 @@ macro_rules! push_value {
 pub struct Vm {
     pub stack: Vec<Rooted<Value>>,
     pub heap: Heap<Value>,
+    globals: HashMap<String, Rooted<Value>>,
     chunk: Chunk,
     ip: usize,
 }
@@ -40,6 +42,7 @@ impl Vm {
         Self {
             stack: Vec::with_capacity(STACK_MAX),
             heap: Heap::default(),
+            globals: HashMap::new(),
             chunk: Chunk::new(String::from("")),
             ip: 0,
         }
@@ -56,8 +59,8 @@ impl Vm {
         loop {
             match OpCode::from(self.fetch()) {
                 OpCode::Return => {
-                    let handle = self.pop()?;
-                    println!("{:?}", self.heap.get(handle).ok_or(LoxError::RuntimeError)?);
+                    // let handle = self.pop()?;
+                    // println!("{:?}", self.heap.get(handle).ok_or(LoxError::RuntimeError)?);
                     return Ok(());
                 }
                 OpCode::Constant => match self.fetch_const() {
@@ -75,7 +78,6 @@ impl Vm {
                     push_value!(Value::Number(-value), self);
                 }
                 OpCode::Add => {
-                    // binary_op!(+, self)
                     let handle_b = self.pop()?;
                     let handle_a = self.pop()?;
 
@@ -132,7 +134,48 @@ impl Vm {
                 }
                 OpCode::Greater => binary_op!(>, self, Bool),
                 OpCode::Less => binary_op!(<, self, Bool),
+
+                OpCode::Print => {
+                    let handle = self.pop()?;
+                    println!(
+                        "{:?}",
+                        self.heap.get(handle).ok_or(LoxError::StackUnderflow)?
+                    );
+                }
+                OpCode::Pop => {
+                    self.pop()?;
+                }
+                OpCode::DefineGlobal => {
+                    let name = self.fetch_str_const()?;
+                    let handle = self.pop()?;
+                    self.globals.insert(name, handle);
+                }
+                OpCode::GetGlobal => {
+                    let name = self.fetch_str_const()?;
+                    let value = self
+                        .globals
+                        .get(&name)
+                        .ok_or(LoxError::RuntimeError)?
+                        .clone();
+                    self.push(value)?;
+                }
+                OpCode::SetGlobal => {
+                    let name = self.fetch_str_const()?;
+                    if !self.globals.contains_key(&name) {
+                        return Err(LoxError::RuntimeError);
+                    }
+
+                    let handle = self.stack.last().ok_or(LoxError::StackUnderflow)?.clone();
+                    self.globals.insert(name, handle.clone());
+                }
             }
+        }
+    }
+
+    fn fetch_str_const(&mut self) -> Result<String> {
+        match self.fetch_const() {
+            Const::Str(s) => Ok(s),
+            _ => Err(LoxError::RuntimeError),
         }
     }
 

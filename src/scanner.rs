@@ -151,9 +151,9 @@ impl<'a> Iterator for Scanner<'a> {
     type Item = Result<Token>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.consume_whitespace();
-
         loop {
+            self.consume_whitespace();
+
             match self.source.next() {
                 Some('(') => return token!(LParen, self.line),
                 Some(')') => return token!(RParen, self.line),
