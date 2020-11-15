@@ -359,6 +359,26 @@ impl<'a> Compiler<'a> {
         Ok(None)
     }
 
+    fn and(&mut self, can_assign: bool) -> Result<()> {
+        let end_jump = self.emit_jump(OpCode::JumpIfFalse as u8);
+
+        self.emit_byte(OpCode::Pop as u8);
+        self.parse_precedence(TokenType::And.precedence())?;
+
+        self.patch_jump(end_jump)
+    }
+
+    fn or(&mut self, can_assign: bool) -> Result<()> {
+        let else_jump = self.emit_jump(OpCode::JumpIfFalse as u8);
+        let end_jump = self.emit_jump(OpCode::Jump as u8);
+
+        self.patch_jump(else_jump)?;
+        self.emit_byte(OpCode::Pop as u8);
+
+        self.parse_precedence(TokenType::Or.precedence())?;
+        self.patch_jump(end_jump)
+    }
+
     fn prefix(&mut self, can_assign: bool) -> Result<()> {
         match self.peek().ok_or(LoxError::UnexpectedEOF)? {
             TokenType::LParen => self.grouping(),
@@ -383,6 +403,8 @@ impl<'a> Compiler<'a> {
             | TokenType::LessEq
             | TokenType::Greater
             | TokenType::GreaterEq => self.binary(),
+            TokenType::And => self.and(),
+            TokenType::Or => self.or(),
             _ => unimplemented!(),
         }
     }
