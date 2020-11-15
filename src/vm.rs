@@ -168,6 +168,16 @@ impl Vm {
                     let handle = self.stack.last().ok_or(LoxError::StackUnderflow)?.clone();
                     self.globals.insert(name, handle.clone());
                 }
+                OpCode::GetLocal => {
+                    let idx = self.fetch() as usize;
+                    let handle = self.stack[idx].clone();
+                    self.push(handle)?;
+                }
+                OpCode::SetLocal => {
+                    let idx = self.fetch() as usize;
+                    let handle = self.stack.last().ok_or(LoxError::StackUnderflow)?.clone();
+                    self.stack[idx] = handle;
+                }
             }
         }
     }

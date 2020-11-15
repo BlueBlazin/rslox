@@ -7,6 +7,7 @@ pub enum LoxError {
     UnexpectedToken,
     UnexpectedEOF,
     TypeError,
+    TooManyLocalVariables,
 }
 
 pub type Result<T> = std::result::Result<T, LoxError>;

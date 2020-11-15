@@ -19,6 +19,8 @@ pub enum OpCode {
     DefineGlobal,
     GetGlobal,
     SetGlobal,
+    GetLocal,
+    SetLocal,
 }
 
 impl From<u8> for OpCode {
@@ -43,6 +45,8 @@ impl From<u8> for OpCode {
             0x10 => OpCode::DefineGlobal,
             0x11 => OpCode::GetGlobal,
             0x12 => OpCode::SetGlobal,
+            0x13 => OpCode::GetLocal,
+            0x14 => OpCode::SetLocal,
             _ => panic!("Byte doesn't map to any opcode."),
         }
     }

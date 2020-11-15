@@ -21,9 +21,10 @@ mod tests {
         use crate::scanner::Scanner;
 
         let source = r#"
-            var foo = 1 + 1;
-            foo = 5 * foo;
-            print foo;
+            var a = 1;
+            {
+                var a = a;
+            }
         "#;
 
         let mut compiler = compiler::Compiler::new(source.chars());

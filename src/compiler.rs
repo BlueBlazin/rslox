@@ -9,8 +9,15 @@ use crate::value::Value;
 use std::iter::Peekable;
 use std::str::Chars;
 
+struct Local {
+    name: String,
+    depth: isize,
+}
+
 pub struct Compiler<'a> {
     scanner: Peekable<Scanner<'a>>,
+    locals: Vec<Local>,
+    scope_depth: isize,
     pub line: usize,
     pub chunk: Chunk,
 }
@@ -19,6 +26,8 @@ impl<'a> Compiler<'a> {
     pub fn new(source: Chars<'a>) -> Self {
         Self {
             scanner: Scanner::new(source).peekable(),
+            locals: Vec::with_capacity(std::u8::MAX as usize),
+            scope_depth: 0,
             line: 0,
             chunk: Chunk::new(String::from("0")),
         }
@@ -41,7 +50,7 @@ impl<'a> Compiler<'a> {
 
     fn var_declaration(&mut self) -> Result<()> {
         self.expect(TokenType::Var)?;
-        let global = self.parse_variable()?;
+        let name = self.parse_variable()?;
 
         match self.peek() {
             Some(TokenType::Equal) => {
@@ -53,24 +62,72 @@ impl<'a> Compiler<'a> {
 
         self.expect(TokenType::Semicolon)?;
 
-        self.define_variable(global)
+        self.define_variable(name)
     }
 
     fn parse_variable(&mut self) -> Result<u8> {
         match self.advance()? {
-            Some(TokenType::Ident(id)) => self.chunk.add_constant(Const::Str(id)),
+            Some(TokenType::Ident(id)) => {
+                self.declare_variable(id.clone())?;
+
+                if self.scope_depth > 0 {
+                    Ok(0)
+                } else {
+                    self.chunk.add_constant(Const::Str(id))
+                }
+            }
             _ => Err(LoxError::UnexpectedToken),
         }
     }
 
-    fn define_variable(&mut self, global: u8) -> Result<()> {
-        self.emit_bytes(OpCode::DefineGlobal as u8, global);
+    fn declare_variable(&mut self, name: String) -> Result<()> {
+        if self.scope_depth == 0 {
+            return Ok(());
+        }
+
+        for local in self.locals.iter().rev() {
+            if local.depth != -1 && local.depth < self.scope_depth {
+                break;
+            }
+
+            if &name == &local.name {
+                return Err(LoxError::CompileError);
+            }
+        }
+
+        self.add_local(name)
+    }
+
+    fn add_local(&mut self, name: String) -> Result<()> {
+        if self.locals.len() == 256 {
+            return Err(LoxError::TooManyLocalVariables);
+        }
+
+        self.locals.push(Local { name, depth: -1 });
+
+        Ok(())
+    }
+
+    fn define_variable(&mut self, name: u8) -> Result<()> {
+        if self.scope_depth <= 0 {
+            self.emit_bytes(OpCode::DefineGlobal as u8, name);
+        } else {
+            let len = self.locals.len();
+            self.locals[len - 1].depth = self.scope_depth;
+        }
+
         Ok(())
     }
 
     fn statement(&mut self) -> Result<()> {
         match self.peek() {
             Some(TokenType::Print) => self.print_statement(),
+            Some(TokenType::LBrace) => {
+                self.begin_scope();
+                self.block()?;
+                self.end_scope();
+                Ok(())
+            }
             _ => self.expr_statement(),
         }
     }
@@ -81,6 +138,39 @@ impl<'a> Compiler<'a> {
         self.expect(TokenType::Semicolon)?;
         self.emit_byte(OpCode::Print as u8);
         Ok(())
+    }
+
+    fn block(&mut self) -> Result<()> {
+        self.expect(TokenType::LBrace)?;
+
+        loop {
+            match self.peek() {
+                Some(TokenType::RBrace) | None => break,
+                _ => self.declaration()?,
+            }
+        }
+
+        self.expect(TokenType::RBrace)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn begin_scope(&mut self) {
+        self.scope_depth += 1;
+    }
+
+    fn end_scope(&mut self) {
+        self.scope_depth -= 1;
+
+        loop {
+            match self.locals.last() {
+                Some(Local { depth, .. }) if depth > &self.scope_depth => {
+                    self.emit_byte(OpCode::Pop as u8);
+                    self.locals.pop();
+                }
+                _ => break,
+            }
+        }
     }
 
     fn expr_statement(&mut self) -> Result<()> {
@@ -191,21 +281,43 @@ impl<'a> Compiler<'a> {
     fn named_variable(&mut self, name: TokenType, can_assign: bool) -> Result<()> {
         match name {
             TokenType::Ident(s) => {
-                let arg = self.chunk.add_constant(Const::Str(s))?;
+                // let arg = self.chunk.add_constant(Const::Str(s))?;
+                let (arg, get_op, set_op) = match self.resolve_local(&s)? {
+                    Some(idx) => (idx, OpCode::GetLocal, OpCode::SetLocal),
+                    None => (
+                        self.chunk.add_constant(Const::Str(s))?,
+                        OpCode::GetGlobal,
+                        OpCode::SetGlobal,
+                    ),
+                };
 
                 match self.peek() {
                     Some(TokenType::Equal) if can_assign => {
                         self.advance()?;
                         self.expression()?;
-                        self.emit_bytes(OpCode::SetGlobal as u8, arg);
+                        self.emit_bytes(set_op as u8, arg);
                     }
-                    _ => self.emit_bytes(OpCode::GetGlobal as u8, arg),
+                    _ => self.emit_bytes(get_op as u8, arg),
                 }
 
                 Ok(())
             }
             _ => Err(LoxError::UnexpectedToken),
         }
+    }
+
+    fn resolve_local(&mut self, name: &str) -> Result<Option<u8>> {
+        for (idx, local) in self.locals.iter().rev().enumerate() {
+            if &local.name == name {
+                if local.depth == -1 {
+                    return Err(LoxError::CompileError);
+                }
+
+                return Ok(Some(idx as u8));
+            }
+        }
+
+        Ok(None)
     }
 
     fn prefix(&mut self, can_assign: bool) -> Result<()> {

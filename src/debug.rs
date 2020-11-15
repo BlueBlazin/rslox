@@ -10,12 +10,23 @@ macro_rules! simple_instr {
 }
 
 macro_rules! const_instr {
-    ($output:expr, $i:expr, $opcode:expr, $self: expr) => {{
+    ($output:expr, $i:expr, $opcode:expr, $self:expr) => {{
         let constant = $self.code[$i + 1] as usize;
+
         $output.push_str(&format!(
-            "{:10} {:4} '{:?}'\n",
+            "{:12} {:4} '{:?}'\n",
             $opcode, constant, $self.constants[constant]
         ));
+
+        $i += 2;
+    }};
+}
+
+macro_rules! byte_instr {
+    ($output:expr, $i:expr, $opcode:expr, $self:expr) => {{
+        let idx = $self.code[$i + 1] as usize;
+
+        $output.push_str(&format!("{:12} {:4}\n", $opcode, idx));
 
         $i += 2;
     }};
@@ -52,6 +63,8 @@ impl fmt::Debug for Chunk {
                 OpCode::DefineGlobal => const_instr!(output, i, opcode, self),
                 OpCode::GetGlobal => const_instr!(output, i, opcode, self),
                 OpCode::SetGlobal => const_instr!(output, i, opcode, self),
+                OpCode::GetLocal => byte_instr!(output, i, opcode, self),
+                OpCode::SetLocal => byte_instr!(output, i, opcode, self),
             }
 
             num += 1;
