@@ -178,6 +178,19 @@ impl Vm {
                     let handle = self.stack.last().ok_or(LoxError::StackUnderflow)?.clone();
                     self.stack[idx] = handle;
                 }
+                OpCode::JumpIfFalse => {
+                    let offset = self.fetch16() as usize;
+
+                    let handle = self.stack.last().ok_or(LoxError::StackUnderflow)?.clone();
+
+                    if self.heap.get(handle).unwrap().is_falsey() {
+                        self.ip += offset;
+                    }
+                }
+                OpCode::Jump => {
+                    let offset = self.fetch16() as usize;
+                    self.ip += offset;
+                }
             }
         }
     }
@@ -187,6 +200,12 @@ impl Vm {
             Const::Str(s) => Ok(s),
             _ => Err(LoxError::RuntimeError),
         }
+    }
+
+    fn fetch16(&mut self) -> u16 {
+        let hi = self.fetch();
+        let lo = self.fetch();
+        (hi as u16) << 8 | (lo as u16)
     }
 
     #[inline]

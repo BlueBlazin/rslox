@@ -21,10 +21,8 @@ mod tests {
         use crate::scanner::Scanner;
 
         let source = r#"
-            var a = 1;
-            {
-                var a = a;
-            }
+            if (false) print 1 + 1;
+            else print "Hello, world!";
         "#;
 
         let mut compiler = compiler::Compiler::new(source.chars());

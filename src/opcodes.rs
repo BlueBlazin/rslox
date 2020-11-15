@@ -21,6 +21,8 @@ pub enum OpCode {
     SetGlobal,
     GetLocal,
     SetLocal,
+    JumpIfFalse,
+    Jump,
 }
 
 impl From<u8> for OpCode {
@@ -47,6 +49,8 @@ impl From<u8> for OpCode {
             0x12 => OpCode::SetGlobal,
             0x13 => OpCode::GetLocal,
             0x14 => OpCode::SetLocal,
+            0x15 => OpCode::JumpIfFalse,
+            0x16 => OpCode::Jump,
             _ => panic!("Byte doesn't map to any opcode."),
         }
     }

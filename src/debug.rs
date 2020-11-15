@@ -32,6 +32,22 @@ macro_rules! byte_instr {
     }};
 }
 
+macro_rules! jump_instr {
+    ($output:expr, $i:expr, $opcode:expr, $sign:expr, $self:expr) => {{
+        let mut jump = ($self.code[$i + 1] as u16) << 8;
+        jump |= $self.code[$i + 2] as u16;
+
+        $output.push_str(&format!(
+            "{:12} {:4} -> {}\n",
+            $opcode,
+            $i,
+            $i + 3 + ($sign * jump) as usize
+        ));
+
+        $i += 3;
+    }};
+}
+
 impl fmt::Debug for Chunk {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut output = format!("=== {} ===\n", self.name);
@@ -65,6 +81,8 @@ impl fmt::Debug for Chunk {
                 OpCode::SetGlobal => const_instr!(output, i, opcode, self),
                 OpCode::GetLocal => byte_instr!(output, i, opcode, self),
                 OpCode::SetLocal => byte_instr!(output, i, opcode, self),
+                OpCode::JumpIfFalse => jump_instr!(output, i, opcode, 1, self),
+                OpCode::Jump => jump_instr!(output, i, opcode, 1, self),
             }
 
             num += 1;

@@ -128,6 +128,7 @@ impl<'a> Compiler<'a> {
                 self.end_scope();
                 Ok(())
             }
+            Some(TokenType::If) => self.if_statement(),
             _ => self.expr_statement(),
         }
     }
@@ -171,6 +172,44 @@ impl<'a> Compiler<'a> {
                 _ => break,
             }
         }
+    }
+
+    fn if_statement(&mut self) -> Result<()> {
+        self.expect(TokenType::If)?;
+
+        self.expect(TokenType::LParen)?;
+        self.expression()?;
+        self.expect(TokenType::RParen)?;
+
+        let then_jump = self.emit_jump(OpCode::JumpIfFalse as u8);
+
+        self.emit_byte(OpCode::Pop as u8);
+        self.statement()?;
+
+        let else_jump = self.emit_jump(OpCode::Jump as u8);
+
+        self.patch_jump(then_jump)?;
+        self.emit_byte(OpCode::Pop as u8);
+
+        if let Some(TokenType::Else) = self.peek() {
+            self.advance()?;
+            self.statement()?;
+        }
+
+        self.patch_jump(else_jump)
+    }
+
+    fn patch_jump(&mut self, offset: usize) -> Result<()> {
+        let jump = self.chunk.code.len() - offset - 2;
+
+        if jump > std::u16::MAX as usize {
+            return Err(LoxError::CompileError);
+        }
+
+        self.chunk.code[offset] = ((jump as u16 >> 8) & 0xFF) as u8;
+        self.chunk.code[offset + 1] = (jump as u16 & 0xFF) as u8;
+
+        Ok(())
     }
 
     fn expr_statement(&mut self) -> Result<()> {
@@ -383,5 +422,13 @@ impl<'a> Codegen for Compiler<'a> {
         let constant = self.chunk.add_constant(value)?;
         self.emit_bytes(OpCode::Constant as u8, constant);
         Ok(())
+    }
+
+    fn emit_jump(&mut self, value: u8) -> usize {
+        self.emit_byte(value);
+        self.emit_byte(0xFF);
+        self.emit_byte(0xFF);
+
+        self.chunk.code.len() - 2
     }
 }
