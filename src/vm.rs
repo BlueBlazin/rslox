@@ -191,6 +191,10 @@ impl Vm {
                     let offset = self.fetch16() as usize;
                     self.ip += offset;
                 }
+                OpCode::Loop => {
+                    let offset = self.fetch16() as usize;
+                    self.ip -= offset;
+                }
             }
         }
     }

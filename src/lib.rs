@@ -21,8 +21,11 @@ mod tests {
         use crate::scanner::Scanner;
 
         let source = r#"
-            if (false) print 1 + 1;
-            else print "Hello, world!";
+            var i = 0;
+            while (i < 5) {
+                print i;
+                i = i + 1;
+            }
         "#;
 
         let mut compiler = compiler::Compiler::new(source.chars());

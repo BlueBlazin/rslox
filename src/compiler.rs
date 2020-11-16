@@ -129,6 +129,7 @@ impl<'a> Compiler<'a> {
                 Ok(())
             }
             Some(TokenType::If) => self.if_statement(),
+            Some(TokenType::While) => self.while_statement(),
             _ => self.expr_statement(),
         }
     }
@@ -208,6 +209,28 @@ impl<'a> Compiler<'a> {
 
         self.chunk.code[offset] = ((jump as u16 >> 8) & 0xFF) as u8;
         self.chunk.code[offset + 1] = (jump as u16 & 0xFF) as u8;
+
+        Ok(())
+    }
+
+    fn while_statement(&mut self) -> Result<()> {
+        self.expect(TokenType::While)?;
+
+        let loop_start = self.chunk.code.len();
+
+        self.expect(TokenType::LParen)?;
+        self.expression()?;
+        self.expect(TokenType::RParen)?;
+
+        let exit_jump = self.emit_jump(OpCode::JumpIfFalse as u8);
+
+        self.emit_byte(OpCode::Pop as u8);
+        self.statement()?;
+
+        self.emit_loop(loop_start)?;
+
+        self.patch_jump(exit_jump)?;
+        self.emit_byte(OpCode::Pop as u8);
 
         Ok(())
     }
@@ -359,7 +382,7 @@ impl<'a> Compiler<'a> {
         Ok(None)
     }
 
-    fn and(&mut self, can_assign: bool) -> Result<()> {
+    fn and(&mut self) -> Result<()> {
         let end_jump = self.emit_jump(OpCode::JumpIfFalse as u8);
 
         self.emit_byte(OpCode::Pop as u8);
@@ -368,7 +391,7 @@ impl<'a> Compiler<'a> {
         self.patch_jump(end_jump)
     }
 
-    fn or(&mut self, can_assign: bool) -> Result<()> {
+    fn or(&mut self) -> Result<()> {
         let else_jump = self.emit_jump(OpCode::JumpIfFalse as u8);
         let end_jump = self.emit_jump(OpCode::Jump as u8);
 
@@ -452,5 +475,20 @@ impl<'a> Codegen for Compiler<'a> {
         self.emit_byte(0xFF);
 
         self.chunk.code.len() - 2
+    }
+
+    fn emit_loop(&mut self, loop_start: usize) -> Result<()> {
+        self.emit_byte(OpCode::Loop as u8);
+
+        let offset = self.chunk.code.len() - loop_start + 2;
+
+        if offset > std::u16::MAX as usize {
+            return Err(LoxError::CompileError);
+        }
+
+        self.emit_byte(((offset >> 8) & 0xFF) as u8);
+        self.emit_byte((offset & 0xFF) as u8);
+
+        Ok(())
     }
 }
