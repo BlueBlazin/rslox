@@ -1,13 +1,12 @@
 use crate::chunk::Chunk;
 use crate::codegen::Codegen;
 use crate::error::{LoxError, Result};
+use crate::gc::Heap;
 use crate::object::{LoxObj, ObjFunction, ObjString};
 use crate::opcodes::OpCode;
 use crate::scanner::Scanner;
 use crate::token::{Token, TokenType};
 use crate::value::{Value, ValueHandle};
-// use broom::prelude::*;
-use crate::gc::Heap;
 use std::iter::Peekable;
 use std::str::Chars;
 
