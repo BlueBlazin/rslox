@@ -30,7 +30,6 @@ pub struct Compiler<'a> {
     locals: Vec<Local>,
     scope_depth: isize,
     pub line: usize,
-    // pub chunk: Chunk,
     pub heap: Heap<Value>,
 }
 
@@ -58,7 +57,6 @@ impl<'a> Compiler<'a> {
             locals,
             scope_depth: 0,
             line: 0,
-            // chunk: Chunk::new(String::from("0")),
             heap,
         }
     }

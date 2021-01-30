@@ -1,9 +1,8 @@
 use crate::error::{LoxError, Result};
+use crate::gc::Heap;
 use crate::object::{LoxObj, ObjFunction, ObjString};
 use crate::opcodes::OpCode;
 use crate::value::{Value, ValueHandle};
-// use broom::prelude::*;
-use crate::gc::Heap;
 use std::collections::HashMap;
 
 const STACK_MAX: usize = 256;
@@ -36,7 +35,6 @@ pub struct Vm {
     pub heap: Heap<Value>,
     pub frames: Vec<CallFrame>,
     globals: HashMap<String, ValueHandle>,
-    // chunk: Chunk,
     function: ObjFunction,
     ip: usize,
 }
@@ -48,14 +46,12 @@ impl Vm {
             heap,
             frames: Vec::with_capacity(FRAMES_MAX),
             globals: HashMap::new(),
-            // chunk: Chunk::new(String::from("")),
             function,
             ip: 0,
         }
     }
 
     pub fn interpret(&mut self) -> Result<()> {
-        // self.chunk = chunk;
         self.ip = 0;
 
         self.run()
@@ -65,8 +61,6 @@ impl Vm {
         loop {
             match OpCode::from(self.fetch()) {
                 OpCode::Return => {
-                    // let handle = self.pop()?;
-                    // println!("{:?}", self.heap.get(handle).ok_or(LoxError::RuntimeError)?);
                     return Ok(());
                 }
                 OpCode::Constant => {
@@ -74,16 +68,6 @@ impl Vm {
 
                     self.push(handle)?
                 }
-                // OpCode::Constant => match self.fetch_const() {
-                //     Const::Num(n) => self.push(Value::Number(n)),
-                //     Const::Str(s) => selh(
-                //         Value::Obj(LoxObj::Str(Box::from(ObjString {
-                //             length: s.len(),
-                //             value: s,
-                //         }))),
-                //         self
-                //     ),
-                // },
                 OpCode::Negate => {
                     let value = self.pop_number()?;
 
@@ -112,28 +96,6 @@ impl Vm {
                         _ => return Err(LoxError::TypeError),
                     }
                 }
-                // OpCode::Add => {
-                //     let handle_b = self.pop()?;
-                //     let handle_a = self.pop()?;
-
-                //     match (self.heap.get(&handle_a), self.heap.get(&handle_b)) {
-                //         (Some(Value::Number(a)), Some(Value::Number(b))) => {
-                //             self.push(Value::Number(*a + *b));
-                //         }
-                //         (Some(Value::Obj(LoxObj::Str(a))), Some(Value::Obj(LoxObj::Str(b)))) => {
-                //             let mut value = String::from(&a.value);
-                //             value.push_str(&b.value);
-
-                //             let new_str = Value::Obj(LoxObj::Str(Box::from(ObjString {
-                //                 length: a.length + b.length,
-                //                 value,
-                //             })));
-
-                //             self.push(new_str);
-                //         }
-                //         _ => return Err(LoxError::TypeError),
-                //     }
-                // }
                 OpCode::Subtract => binary_op!(-, self),
                 OpCode::Multiply => binary_op!(*, self),
                 OpCode::Divide => binary_op!(/, self),
@@ -240,11 +202,6 @@ impl Vm {
     fn fetch_str_const(&mut self) -> Result<String> {
         let handle = self.fetch_const();
 
-        // match self.fetch_const() {
-        //     Const::Str(s) => Ok(s),
-        //     _ => Err(LoxError::RuntimeError),
-        // }
-
         match self.heap.get(&handle) {
             Some(Value::Obj(LoxObj::Str(ObjString { value }))) => Ok(value.clone()),
             _ => Err(LoxError::RuntimeError),
@@ -301,12 +258,6 @@ impl Vm {
             _ => Err(LoxError::TypeError),
         }
     }
-
-    // fn pop_value(&mut self) -> Result<&Value> {
-    //     let handle = self.pop()?;
-
-    //     self.heap.get(&handle).ok_or(LoxError::RuntimeError)
-    // }
 
     fn get_value(&self, handle: ValueHandle) -> Result<&Value> {
         self.heap.get(&handle).ok_or(LoxError::RuntimeError)

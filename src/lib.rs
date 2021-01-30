@@ -20,7 +20,6 @@ mod tests {
         use crate::codegen::Codegen;
         use crate::gc::Heap;
         use crate::opcodes::OpCode;
-        // use crate::scanner::Scanner;
 
         let source = r#"
             var i = 0;
@@ -41,9 +40,5 @@ mod tests {
 
         let mut vm = vm::Vm::new(compiler.function, compiler.heap);
         vm.interpret().unwrap();
-
-        // let mut scanner = Scanner::new(source.chars());
-        // let tokens: Vec<_> = scanner.collect();
-        // println!("{:?}", tokens);
     }
 }
