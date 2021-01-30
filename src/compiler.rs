@@ -1,11 +1,13 @@
-use crate::chunk::{Chunk, Const};
+use crate::chunk::Chunk;
 use crate::codegen::Codegen;
 use crate::error::{LoxError, Result};
-use crate::object::{LoxObj, ObjString};
+use crate::object::{LoxObj, ObjFunction, ObjString};
 use crate::opcodes::OpCode;
 use crate::scanner::Scanner;
 use crate::token::{Token, TokenType};
-use crate::value::Value;
+use crate::value::{Value, ValueHandle};
+// use broom::prelude::*;
+use crate::gc::Heap;
 use std::iter::Peekable;
 use std::str::Chars;
 
@@ -14,22 +16,50 @@ struct Local {
     depth: isize,
 }
 
+enum FunctionType {
+    Function,
+    Script,
+}
+
 pub struct Compiler<'a> {
     scanner: Peekable<Scanner<'a>>,
+
+    pub function: ObjFunction,
+    fun_type: FunctionType,
+
     locals: Vec<Local>,
     scope_depth: isize,
     pub line: usize,
-    pub chunk: Chunk,
+    // pub chunk: Chunk,
+    heap: Heap<Value>,
 }
 
 impl<'a> Compiler<'a> {
-    pub fn new(source: Chars<'a>) -> Self {
+    pub fn new(source: Chars<'a>, heap: Heap<Value>) -> Self {
+        let mut locals = Vec::with_capacity(std::u8::MAX as usize);
+
+        locals.push(Local {
+            name: String::from(""),
+            depth: 0,
+        });
+
+        let function = ObjFunction {
+            arity: 0,
+            chunk: Chunk::new(String::from("main")),
+            name: None,
+        };
+
         Self {
             scanner: Scanner::new(source).peekable(),
-            locals: Vec::with_capacity(std::u8::MAX as usize),
+
+            function,
+            fun_type: FunctionType::Script,
+
+            locals,
             scope_depth: 0,
             line: 0,
-            chunk: Chunk::new(String::from("0")),
+            // chunk: Chunk::new(String::from("0")),
+            heap,
         }
     }
 
@@ -73,7 +103,9 @@ impl<'a> Compiler<'a> {
                 if self.scope_depth > 0 {
                     Ok(0)
                 } else {
-                    self.chunk.add_constant(Const::Str(id))
+                    let handle = self.make_string(id);
+
+                    self.chunk().add_constant(handle)
                 }
             }
             _ => Err(LoxError::UnexpectedToken),
@@ -201,14 +233,14 @@ impl<'a> Compiler<'a> {
     }
 
     fn patch_jump(&mut self, offset: usize) -> Result<()> {
-        let jump = self.chunk.code.len() - offset - 2;
+        let jump = self.chunk().code.len() - offset - 2;
 
         if jump > std::u16::MAX as usize {
             return Err(LoxError::CompileError);
         }
 
-        self.chunk.code[offset] = ((jump as u16 >> 8) & 0xFF) as u8;
-        self.chunk.code[offset + 1] = (jump as u16 & 0xFF) as u8;
+        self.chunk().code[offset] = ((jump as u16 >> 8) & 0xFF) as u8;
+        self.chunk().code[offset + 1] = (jump as u16 & 0xFF) as u8;
 
         Ok(())
     }
@@ -216,7 +248,7 @@ impl<'a> Compiler<'a> {
     fn while_statement(&mut self) -> Result<()> {
         self.expect(TokenType::While)?;
 
-        let loop_start = self.chunk.code.len();
+        let loop_start = self.chunk().code.len();
 
         self.expect(TokenType::LParen)?;
         self.expression()?;
@@ -312,7 +344,7 @@ impl<'a> Compiler<'a> {
 
     fn number(&mut self) -> Result<()> {
         match self.advance()? {
-            Some(TokenType::Num(n)) => self.emit_const(Const::Num(n)),
+            Some(TokenType::Num(n)) => self.emit_const(self.heap.insert(Value::Number(n))),
             _ => Err(LoxError::UnexpectedToken),
         }
     }
@@ -330,7 +362,11 @@ impl<'a> Compiler<'a> {
 
     fn string(&mut self) -> Result<()> {
         match self.advance()? {
-            Some(TokenType::Str(s)) => self.emit_const(Const::Str(s)),
+            Some(TokenType::Str(value)) => {
+                let handle = self.make_string(value);
+
+                self.emit_const(handle)
+            }
             _ => Err(LoxError::UnexpectedToken),
         }
     }
@@ -342,15 +378,19 @@ impl<'a> Compiler<'a> {
 
     fn named_variable(&mut self, name: TokenType, can_assign: bool) -> Result<()> {
         match name {
-            TokenType::Ident(s) => {
-                // let arg = self.chunk.add_constant(Const::Str(s))?;
-                let (arg, get_op, set_op) = match self.resolve_local(&s)? {
+            TokenType::Ident(value) => {
+                // let arg = self.chunk().add_constant(Const::Str(s))?;
+                let (arg, get_op, set_op) = match self.resolve_local(&value)? {
                     Some(idx) => (idx, OpCode::GetLocal, OpCode::SetLocal),
-                    None => (
-                        self.chunk.add_constant(Const::Str(s))?,
-                        OpCode::GetGlobal,
-                        OpCode::SetGlobal,
-                    ),
+                    None => {
+                        let handle = self.make_string(value);
+
+                        (
+                            self.chunk().add_constant(handle)?,
+                            OpCode::GetGlobal,
+                            OpCode::SetGlobal,
+                        )
+                    }
                 };
 
                 match self.peek() {
@@ -456,15 +496,25 @@ impl<'a> Compiler<'a> {
             _ => Err(LoxError::UnexpectedToken),
         }
     }
+
+    pub fn chunk(&mut self) -> &mut Chunk {
+        &mut self.function.chunk
+    }
+
+    fn make_string(&mut self, value: String) -> ValueHandle {
+        self.heap
+            .insert(Value::Obj(LoxObj::Str(ObjString { value })))
+    }
 }
 
 impl<'a> Codegen for Compiler<'a> {
     fn emit_byte(&mut self, value: u8) {
-        self.chunk.write(value, self.line);
+        let line = self.line;
+        self.chunk().write(value, line);
     }
 
-    fn emit_const(&mut self, value: Const) -> Result<()> {
-        let constant = self.chunk.add_constant(value)?;
+    fn emit_const(&mut self, handle: ValueHandle) -> Result<()> {
+        let constant = self.chunk().add_constant(handle)?;
         self.emit_bytes(OpCode::Constant as u8, constant);
         Ok(())
     }
@@ -474,13 +524,13 @@ impl<'a> Codegen for Compiler<'a> {
         self.emit_byte(0xFF);
         self.emit_byte(0xFF);
 
-        self.chunk.code.len() - 2
+        self.chunk().code.len() - 2
     }
 
     fn emit_loop(&mut self, loop_start: usize) -> Result<()> {
         self.emit_byte(OpCode::Loop as u8);
 
-        let offset = self.chunk.code.len() - loop_start + 2;
+        let offset = self.chunk().code.len() - loop_start + 2;
 
         if offset > std::u16::MAX as usize {
             return Err(LoxError::CompileError);

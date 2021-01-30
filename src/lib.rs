@@ -3,6 +3,7 @@ mod codegen;
 mod compiler;
 mod debug;
 mod error;
+mod gc;
 mod object;
 mod opcodes;
 mod scanner;
@@ -17,6 +18,7 @@ mod tests {
     #[test]
     fn test_sandbox() {
         use crate::codegen::Codegen;
+        use crate::gc::Heap;
         use crate::opcodes::OpCode;
         use crate::scanner::Scanner;
 
@@ -28,15 +30,17 @@ mod tests {
             }
         "#;
 
-        let mut compiler = compiler::Compiler::new(source.chars());
-        let mut vm = vm::Vm::new();
+        let heap = Heap::new();
+
+        let mut compiler = compiler::Compiler::new(source.chars(), heap);
 
         compiler.parse().unwrap();
         compiler.emit_byte(OpCode::Return as u8);
 
-        println!("{:?}", compiler.chunk);
+        println!("{:?}", compiler.chunk());
 
-        vm.interpret(compiler.chunk).unwrap();
+        let mut vm = vm::Vm::new(compiler.function);
+        vm.interpret().unwrap();
 
         // let mut scanner = Scanner::new(source.chars());
         // let tokens: Vec<_> = scanner.collect();

@@ -1,12 +1,14 @@
-use crate::chunk::{Chunk, Const};
+use crate::chunk::Chunk;
 use crate::error::{LoxError, Result};
-use crate::object::{LoxObj, ObjString};
+use crate::object::{LoxObj, ObjFunction, ObjString};
 use crate::opcodes::OpCode;
-use crate::value::Value;
-use broom::prelude::*;
+use crate::value::{Value, ValueHandle};
+// use broom::prelude::*;
+use crate::gc::{Handle, Heap};
 use std::collections::HashMap;
 
 const STACK_MAX: usize = 256;
+const FRAMES_MAX: usize = 64;
 
 macro_rules! binary_op {
     ($op:tt, $self:expr) => {{
@@ -22,34 +24,50 @@ macro_rules! binary_op {
     }};
 }
 
-macro_rules! push_value {
+// macro_rules! push_value {
+//     ($value:expr, $self:expr) => {{
+//         let handle = $self.alloc($value);
+//         $self.push(handle)?;
+//     }};
+// }
+
+macro_rules! push_handle {
     ($value:expr, $self:expr) => {{
-        let handle = $self.alloc($value);
         $self.push(handle)?;
     }};
 }
 
+pub struct CallFrame {
+    pub function: ObjFunction,
+    pub ip: usize,
+    pub slots: Vec<ValueHandle>,
+}
+
 pub struct Vm {
-    pub stack: Vec<Rooted<Value>>,
+    pub stack: Vec<ValueHandle>,
     pub heap: Heap<Value>,
-    globals: HashMap<String, Rooted<Value>>,
-    chunk: Chunk,
+    pub frames: Vec<CallFrame>,
+    globals: HashMap<String, ValueHandle>,
+    // chunk: Chunk,
+    function: ObjFunction,
     ip: usize,
 }
 
 impl Vm {
-    pub fn new() -> Self {
+    pub fn new(function: ObjFunction) -> Self {
         Self {
-            stack: Vec::with_capacity(STACK_MAX),
-            heap: Heap::default(),
+            stack: Vec::with_capacity(256),
+            heap: Heap::new(),
+            frames: Vec::with_capacity(FRAMES_MAX),
             globals: HashMap::new(),
-            chunk: Chunk::new(String::from("")),
+            // chunk: Chunk::new(String::from("")),
+            function,
             ip: 0,
         }
     }
 
-    pub fn interpret(&mut self, chunk: Chunk) -> Result<()> {
-        self.chunk = chunk;
+    pub fn interpret(&mut self) -> Result<()> {
+        // self.chunk = chunk;
         self.ip = 0;
 
         self.run()
@@ -63,16 +81,17 @@ impl Vm {
                     // println!("{:?}", self.heap.get(handle).ok_or(LoxError::RuntimeError)?);
                     return Ok(());
                 }
-                OpCode::Constant => match self.fetch_const() {
-                    Const::Num(n) => push_value!(Value::Number(n), self),
-                    Const::Str(s) => push_value!(
-                        Value::Obj(LoxObj::Str(Box::from(ObjString {
-                            length: s.len(),
-                            value: s,
-                        }))),
-                        self
-                    ),
-                },
+                OpCode::Constant => push_value!(self.fetch_const()),
+                // OpCode::Constant => match self.fetch_const() {
+                //     Const::Num(n) => push_value!(Value::Number(n), self),
+                //     Const::Str(s) => push_value!(
+                //         Value::Obj(LoxObj::Str(Box::from(ObjString {
+                //             length: s.len(),
+                //             value: s,
+                //         }))),
+                //         self
+                //     ),
+                // },
                 OpCode::Negate => {
                     let value = self.pop_number()?;
                     push_value!(Value::Number(-value), self);
@@ -200,10 +219,12 @@ impl Vm {
     }
 
     fn fetch_str_const(&mut self) -> Result<String> {
-        match self.fetch_const() {
-            Const::Str(s) => Ok(s),
-            _ => Err(LoxError::RuntimeError),
-        }
+        let handle = self.fetch_const();
+
+        // match self.fetch_const() {
+        //     Const::Str(s) => Ok(s),
+        //     _ => Err(LoxError::RuntimeError),
+        // }
     }
 
     fn fetch16(&mut self) -> u16 {
@@ -216,20 +237,20 @@ impl Vm {
     fn fetch(&mut self) -> u8 {
         self.ip += 1;
 
-        self.chunk.code[self.ip - 1]
+        self.function.chunk.code[self.ip - 1]
     }
 
     #[inline]
-    fn fetch_const(&mut self) -> Const {
+    fn fetch_const(&mut self) -> ValueHandle {
         let idx = self.fetch() as usize;
 
-        self.chunk.constants[idx].clone()
+        self.function.chunk.constants[idx]
     }
 
     #[inline]
-    fn push(&mut self, value: Rooted<Value>) -> Result<()> {
+    fn push(&mut self, handle: ValueHandle) -> Result<()> {
         if self.stack.len() < STACK_MAX {
-            self.stack.push(value);
+            self.stack.push(handle);
 
             Ok(())
         } else {
@@ -238,45 +259,20 @@ impl Vm {
     }
 
     #[inline]
-    fn pop(&mut self) -> Result<Rooted<Value>> {
+    fn pop(&mut self) -> Result<ValueHandle> {
         self.stack.pop().ok_or(LoxError::StackUnderflow)
     }
 
     fn pop_number(&mut self) -> Result<f64> {
         let handle = self.pop()?;
 
-        match self.heap.get(handle) {
+        match self.heap.get(&handle) {
             Some(Value::Number(n)) => Ok(*n),
             _ => Err(LoxError::TypeError),
         }
     }
 
-    fn alloc(&mut self, value: Value) -> Rooted<Value> {
+    fn alloc(&mut self, value: Value) -> ValueHandle {
         self.heap.insert(value)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::opcodes::OpCode;
-
-    #[test]
-    fn test_vm_add() {
-        let mut chunk = Chunk::new(String::from("Test"));
-
-        let idx = chunk.add_constant(Const::Num(1.0)).unwrap();
-        chunk.write(OpCode::Constant as u8, 0);
-        chunk.write(idx, 0);
-
-        let idx = chunk.add_constant(Const::Num(2.0)).unwrap();
-        chunk.write(OpCode::Constant as u8, 0);
-        chunk.write(idx, 0);
-
-        chunk.write(OpCode::Add as u8, 0);
-
-        let mut vm = Vm::new();
-
-        vm.interpret(chunk).unwrap();
     }
 }

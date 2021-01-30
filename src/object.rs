@@ -1,15 +1,14 @@
 use crate::chunk::Chunk;
-use std::any::Any;
+use crate::value::ValueHandle;
 
 #[derive(Debug)]
 pub enum LoxObj {
-    Str(Box<ObjString>),
-    Fun(Box<ObjFunction>),
+    Str(ObjString),
+    Fun(ObjFunction),
 }
 
 #[derive(Debug)]
 pub struct ObjString {
-    pub length: usize,
     pub value: String,
 }
 
@@ -17,5 +16,6 @@ pub struct ObjString {
 pub struct ObjFunction {
     pub arity: usize,
     pub chunk: Chunk,
-    pub name: ObjString,
+    // Lox String
+    pub name: Option<ValueHandle>,
 }

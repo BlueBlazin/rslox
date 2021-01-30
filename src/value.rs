@@ -1,5 +1,6 @@
 use crate::object::LoxObj;
-use broom::prelude::*;
+// use broom::prelude::*;
+use crate::gc::Handle;
 
 #[derive(Debug)]
 pub enum Value {
@@ -18,11 +19,4 @@ impl Value {
     }
 }
 
-impl Trace<Self> for Value {
-    fn trace(&self, tracer: &mut Tracer<Self>) {
-        match self {
-            Value::Bool(_) | Value::Number(_) | Value::Nil => (),
-            Value::Obj(obj) => unimplemented!(),
-        }
-    }
-}
+pub type ValueHandle = Handle<Value>;
