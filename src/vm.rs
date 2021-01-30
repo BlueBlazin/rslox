@@ -1,10 +1,9 @@
-use crate::chunk::Chunk;
 use crate::error::{LoxError, Result};
 use crate::object::{LoxObj, ObjFunction, ObjString};
 use crate::opcodes::OpCode;
 use crate::value::{Value, ValueHandle};
 // use broom::prelude::*;
-use crate::gc::{Handle, Heap};
+use crate::gc::Heap;
 use std::collections::HashMap;
 
 const STACK_MAX: usize = 256;
@@ -14,26 +13,15 @@ macro_rules! binary_op {
     ($op:tt, $self:expr) => {{
         let b = $self.pop_number()?;
         let a = $self.pop_number()?;
-        push_value!(Value::Number(a $op b), $self);
+
+        $self.push_value(Value::Number(a $op b))?;
     }};
 
     ($op:tt, $self:expr, $type:tt) => {{
         let b = $self.pop_number()?;
         let a = $self.pop_number()?;
-        push_value!(Value::$type(a $op b), $self);
-    }};
-}
 
-// macro_rules! push_value {
-//     ($value:expr, $self:expr) => {{
-//         let handle = $self.alloc($value);
-//         $self.push(handle)?;
-//     }};
-// }
-
-macro_rules! push_handle {
-    ($value:expr, $self:expr) => {{
-        $self.push(handle)?;
+        $self.push_value(Value::$type(a $op b))?;
     }};
 }
 
@@ -54,10 +42,10 @@ pub struct Vm {
 }
 
 impl Vm {
-    pub fn new(function: ObjFunction) -> Self {
+    pub fn new(function: ObjFunction, heap: Heap<Value>) -> Self {
         Self {
             stack: Vec::with_capacity(256),
-            heap: Heap::new(),
+            heap,
             frames: Vec::with_capacity(FRAMES_MAX),
             globals: HashMap::new(),
             // chunk: Chunk::new(String::from("")),
@@ -81,10 +69,14 @@ impl Vm {
                     // println!("{:?}", self.heap.get(handle).ok_or(LoxError::RuntimeError)?);
                     return Ok(());
                 }
-                OpCode::Constant => push_value!(self.fetch_const()),
+                OpCode::Constant => {
+                    let handle = self.fetch_const();
+
+                    self.push(handle)?
+                }
                 // OpCode::Constant => match self.fetch_const() {
-                //     Const::Num(n) => push_value!(Value::Number(n), self),
-                //     Const::Str(s) => push_value!(
+                //     Const::Num(n) => self.push(Value::Number(n)),
+                //     Const::Str(s) => selh(
                 //         Value::Obj(LoxObj::Str(Box::from(ObjString {
                 //             length: s.len(),
                 //             value: s,
@@ -94,59 +86,88 @@ impl Vm {
                 // },
                 OpCode::Negate => {
                     let value = self.pop_number()?;
-                    push_value!(Value::Number(-value), self);
+
+                    self.push_value(Value::Number(-value))?;
                 }
                 OpCode::Add => {
                     let handle_b = self.pop()?;
                     let handle_a = self.pop()?;
 
-                    match (self.heap.get(handle_a), self.heap.get(handle_b)) {
-                        (Some(Value::Number(a)), Some(Value::Number(b))) => {
-                            push_value!(Value::Number(*a + *b), self);
+                    let b = self.get_value(handle_b)?;
+                    let a = self.get_value(handle_a)?;
+
+                    match (a, b) {
+                        (Value::Number(a), Value::Number(b)) => {
+                            let sum = *a + *b;
+                            self.push_value(Value::Number(sum))?;
                         }
-                        (Some(Value::Obj(LoxObj::Str(a))), Some(Value::Obj(LoxObj::Str(b)))) => {
+                        (Value::Obj(LoxObj::Str(a)), Value::Obj(LoxObj::Str(b))) => {
                             let mut value = String::from(&a.value);
                             value.push_str(&b.value);
 
-                            let new_str = Value::Obj(LoxObj::Str(Box::from(ObjString {
-                                length: a.length + b.length,
-                                value,
-                            })));
+                            let handle = self.alloc(Value::Obj(LoxObj::Str(ObjString { value })));
 
-                            push_value!(new_str, self);
+                            self.push(handle)?;
                         }
                         _ => return Err(LoxError::TypeError),
                     }
                 }
+                // OpCode::Add => {
+                //     let handle_b = self.pop()?;
+                //     let handle_a = self.pop()?;
+
+                //     match (self.heap.get(&handle_a), self.heap.get(&handle_b)) {
+                //         (Some(Value::Number(a)), Some(Value::Number(b))) => {
+                //             self.push(Value::Number(*a + *b));
+                //         }
+                //         (Some(Value::Obj(LoxObj::Str(a))), Some(Value::Obj(LoxObj::Str(b)))) => {
+                //             let mut value = String::from(&a.value);
+                //             value.push_str(&b.value);
+
+                //             let new_str = Value::Obj(LoxObj::Str(Box::from(ObjString {
+                //                 length: a.length + b.length,
+                //                 value,
+                //             })));
+
+                //             self.push(new_str);
+                //         }
+                //         _ => return Err(LoxError::TypeError),
+                //     }
+                // }
                 OpCode::Subtract => binary_op!(-, self),
                 OpCode::Multiply => binary_op!(*, self),
                 OpCode::Divide => binary_op!(/, self),
 
-                OpCode::Nil => push_value!(Value::Nil, self),
-                OpCode::True => push_value!(Value::Bool(true), self),
-                OpCode::False => push_value!(Value::Bool(false), self),
+                OpCode::Nil => self.push_value(Value::Nil)?,
+                OpCode::True => self.push_value(Value::Bool(true))?,
+                OpCode::False => self.push_value(Value::Bool(false))?,
 
                 OpCode::Not => {
                     let handle = self.pop()?;
 
                     let value = self
                         .heap
-                        .get(handle)
+                        .get(&handle)
                         .ok_or(LoxError::RuntimeError)?
                         .is_falsey();
 
-                    push_value!(Value::Bool(value), self);
+                    self.push_value(Value::Bool(value))?;
                 }
                 OpCode::Equal => {
                     let handle_b = self.pop()?;
                     let handle_a = self.pop()?;
 
-                    match (self.heap.get(handle_a), self.heap.get(handle_b)) {
-                        (Some(Value::Number(a)), Some(Value::Number(b))) => {
-                            push_value!(Value::Bool(a == b), self);
+                    let b = self.get_value(handle_b)?;
+                    let a = self.get_value(handle_a)?;
+
+                    match (a, b) {
+                        (Value::Number(a), Value::Number(b)) => {
+                            let cmp = a == b;
+                            self.push_value(Value::Bool(cmp))?;
                         }
-                        (Some(Value::Obj(LoxObj::Str(a))), Some(Value::Obj(LoxObj::Str(b)))) => {
-                            push_value!(Value::Bool(a.value == b.value), self);
+                        (Value::Obj(LoxObj::Str(a)), Value::Obj(LoxObj::Str(b))) => {
+                            let cmp = a.value == b.value;
+                            self.push_value(Value::Bool(cmp))?;
                         }
                         _ => return Err(LoxError::TypeError),
                     }
@@ -156,10 +177,8 @@ impl Vm {
 
                 OpCode::Print => {
                     let handle = self.pop()?;
-                    println!(
-                        "{:?}",
-                        self.heap.get(handle).ok_or(LoxError::StackUnderflow)?
-                    );
+
+                    println!("{:?}", self.get_value(handle));
                 }
                 OpCode::Pop => {
                     self.pop()?;
@@ -202,7 +221,7 @@ impl Vm {
 
                     let handle = self.stack.last().ok_or(LoxError::StackUnderflow)?.clone();
 
-                    if self.heap.get(handle).unwrap().is_falsey() {
+                    if self.heap.get(&handle).unwrap().is_falsey() {
                         self.ip += offset;
                     }
                 }
@@ -214,7 +233,7 @@ impl Vm {
                     let offset = self.fetch16() as usize;
                     self.ip -= offset;
                 }
-            }
+            };
         }
     }
 
@@ -225,6 +244,11 @@ impl Vm {
         //     Const::Str(s) => Ok(s),
         //     _ => Err(LoxError::RuntimeError),
         // }
+
+        match self.heap.get(&handle) {
+            Some(Value::Obj(LoxObj::Str(ObjString { value }))) => Ok(value.clone()),
+            _ => Err(LoxError::RuntimeError),
+        }
     }
 
     fn fetch16(&mut self) -> u16 {
@@ -258,6 +282,12 @@ impl Vm {
         }
     }
 
+    fn push_value(&mut self, value: Value) -> Result<()> {
+        let handle = self.alloc(value);
+
+        self.push(handle)
+    }
+
     #[inline]
     fn pop(&mut self) -> Result<ValueHandle> {
         self.stack.pop().ok_or(LoxError::StackUnderflow)
@@ -272,6 +302,17 @@ impl Vm {
         }
     }
 
+    // fn pop_value(&mut self) -> Result<&Value> {
+    //     let handle = self.pop()?;
+
+    //     self.heap.get(&handle).ok_or(LoxError::RuntimeError)
+    // }
+
+    fn get_value(&self, handle: ValueHandle) -> Result<&Value> {
+        self.heap.get(&handle).ok_or(LoxError::RuntimeError)
+    }
+
+    #[inline]
     fn alloc(&mut self, value: Value) -> ValueHandle {
         self.heap.insert(value)
     }

@@ -1,6 +1,6 @@
 mod chunk;
 mod codegen;
-mod compiler;
+pub mod compiler;
 mod debug;
 mod error;
 mod gc;
@@ -9,7 +9,7 @@ mod opcodes;
 mod scanner;
 mod token;
 mod value;
-mod vm;
+pub mod vm;
 
 #[cfg(test)]
 mod tests {
@@ -20,7 +20,7 @@ mod tests {
         use crate::codegen::Codegen;
         use crate::gc::Heap;
         use crate::opcodes::OpCode;
-        use crate::scanner::Scanner;
+        // use crate::scanner::Scanner;
 
         let source = r#"
             var i = 0;
@@ -39,7 +39,7 @@ mod tests {
 
         println!("{:?}", compiler.chunk());
 
-        let mut vm = vm::Vm::new(compiler.function);
+        let mut vm = vm::Vm::new(compiler.function, compiler.heap);
         vm.interpret().unwrap();
 
         // let mut scanner = Scanner::new(source.chars());

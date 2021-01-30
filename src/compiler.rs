@@ -31,7 +31,7 @@ pub struct Compiler<'a> {
     scope_depth: isize,
     pub line: usize,
     // pub chunk: Chunk,
-    heap: Heap<Value>,
+    pub heap: Heap<Value>,
 }
 
 impl<'a> Compiler<'a> {
@@ -344,7 +344,10 @@ impl<'a> Compiler<'a> {
 
     fn number(&mut self) -> Result<()> {
         match self.advance()? {
-            Some(TokenType::Num(n)) => self.emit_const(self.heap.insert(Value::Number(n))),
+            Some(TokenType::Num(n)) => {
+                let handle = self.heap.insert(Value::Number(n));
+                self.emit_const(handle)
+            }
             _ => Err(LoxError::UnexpectedToken),
         }
     }

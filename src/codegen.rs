@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::value::{Value, ValueHandle};
+use crate::value::ValueHandle;
 
 pub trait Codegen {
     fn emit_byte(&mut self, value: u8);
