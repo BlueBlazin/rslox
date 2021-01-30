@@ -40,7 +40,7 @@ impl<T> Hash for Handle<T> {
 //****************************************************************************
 
 pub struct Heap<T> {
-    objects: HashSet<Handle<T>>,
+    pub objects: HashSet<Handle<T>>,
 }
 
 impl<T> Heap<T> {

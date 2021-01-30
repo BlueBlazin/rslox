@@ -298,7 +298,7 @@ impl<'a> Compiler<'a> {
     fn binary(&mut self) -> Result<()> {
         let op = self.advance()?.ok_or(LoxError::UnexpectedEOF)?;
 
-        self.parse_precedence(op.precedence())?;
+        self.parse_precedence(op.precedence() + 1)?;
 
         match op {
             TokenType::Plus => self.emit_byte(OpCode::Add as u8),

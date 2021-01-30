@@ -83,15 +83,14 @@ impl Vm {
                     match (a, b) {
                         (Value::Number(a), Value::Number(b)) => {
                             let sum = *a + *b;
+
                             self.push_value(Value::Number(sum))?;
                         }
                         (Value::Obj(LoxObj::Str(a)), Value::Obj(LoxObj::Str(b))) => {
                             let mut value = String::from(&a.value);
                             value.push_str(&b.value);
 
-                            let handle = self.alloc(Value::Obj(LoxObj::Str(ObjString { value })));
-
-                            self.push(handle)?;
+                            self.push_value(Value::Obj(LoxObj::Str(ObjString { value })))?;
                         }
                         _ => return Err(LoxError::TypeError),
                     }
