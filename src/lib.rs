@@ -34,7 +34,7 @@ mod tests {
 
         println!("{:?}", compiler.chunk());
 
-        let mut vm = vm::Vm::new(compiler.function, compiler.heap);
+        let mut vm = vm::Vm::new(compiler.function, compiler.heap.unwrap());
         vm.interpret().unwrap();
 
         println!(

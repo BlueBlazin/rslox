@@ -150,39 +150,40 @@ impl Vm {
                     self.globals.insert(name, handle);
                 }
                 OpCode::GetGlobal => {
+                    // TODO: explore the possibility of using &'a str instead
+                    // for querying the globals hash table.
+                    // NOTE: if that is possible, take care to avoid GC cleanup.
                     let name = self.fetch_str_const()?;
-                    let value = self
-                        .globals
-                        .get(&name)
-                        .ok_or(LoxError::RuntimeError)?
-                        .clone();
-                    self.push(value)?;
+                    let handle = *self.globals.get(&name).ok_or(LoxError::RuntimeError)?;
+
+                    self.push(handle)?;
                 }
                 OpCode::SetGlobal => {
                     let name = self.fetch_str_const()?;
+
                     if !self.globals.contains_key(&name) {
                         return Err(LoxError::RuntimeError);
                     }
 
-                    let handle = self.stack.last().ok_or(LoxError::StackUnderflow)?.clone();
-                    self.globals.insert(name, handle.clone());
+                    let handle = self.stack.last().ok_or(LoxError::StackUnderflow)?;
+                    self.globals.insert(name, *handle);
                 }
                 OpCode::GetLocal => {
                     let idx = self.fetch() as usize;
-                    let handle = self.stack[idx].clone();
+                    let handle = self.stack[idx];
                     self.push(handle)?;
                 }
                 OpCode::SetLocal => {
                     let idx = self.fetch() as usize;
-                    let handle = self.stack.last().ok_or(LoxError::StackUnderflow)?.clone();
-                    self.stack[idx] = handle;
+                    let handle = self.stack.last().ok_or(LoxError::StackUnderflow)?;
+                    self.stack[idx] = *handle;
                 }
                 OpCode::JumpIfFalse => {
                     let offset = self.fetch16() as usize;
 
-                    let handle = self.stack.last().ok_or(LoxError::StackUnderflow)?.clone();
+                    let handle = self.stack.last().ok_or(LoxError::StackUnderflow)?;
 
-                    if self.heap.get(&handle).unwrap().is_falsey() {
+                    if self.heap.get(handle).unwrap().is_falsey() {
                         self.ip += offset;
                     }
                 }

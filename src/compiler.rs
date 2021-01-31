@@ -22,41 +22,38 @@ enum FunctionType {
 
 pub struct Compiler<'a> {
     scanner: Peekable<Scanner<'a>>,
-
     pub function: ObjFunction,
     fun_type: FunctionType,
-
     locals: Vec<Local>,
     scope_depth: isize,
     pub line: usize,
-    pub heap: Heap<Value>,
+    pub heap: Option<Heap<Value>>,
 }
 
 impl<'a> Compiler<'a> {
     pub fn new(source: Chars<'a>, heap: Heap<Value>) -> Self {
-        let mut locals = Vec::with_capacity(std::u8::MAX as usize);
-
-        locals.push(Local {
-            name: String::from(""),
-            depth: 0,
-        });
-
+        // NOTE: I don't think we need to worry about GC here. Still, be mindful.
         let function = ObjFunction {
             arity: 0,
             chunk: Chunk::new(String::from("main")),
             name: None,
         };
 
+        let mut locals = Vec::with_capacity(std::u8::MAX as usize + 1);
+
+        locals.push(Local {
+            name: String::from(""),
+            depth: 0,
+        });
+
         Self {
             scanner: Scanner::new(source).peekable(),
-
             function,
             fun_type: FunctionType::Script,
-
             locals,
             scope_depth: 0,
             line: 0,
-            heap,
+            heap: Some(heap),
         }
     }
 
@@ -100,7 +97,7 @@ impl<'a> Compiler<'a> {
                 if self.scope_depth > 0 {
                     Ok(0)
                 } else {
-                    let handle = self.make_string(id);
+                    let handle = self.make_string(id)?;
 
                     self.chunk().add_constant(handle)
                 }
@@ -342,8 +339,15 @@ impl<'a> Compiler<'a> {
     fn number(&mut self) -> Result<()> {
         match self.advance()? {
             Some(TokenType::Num(n)) => {
-                let handle = self.heap.insert(Value::Number(n));
-                self.emit_const(handle)
+                // let handle = self.heap.unwrap().insert(Value::Number(n));
+                // self.emit_const(*handle)
+                match &mut self.heap {
+                    Some(heap) => {
+                        heap.insert(Value::Number(n));
+                        Ok(())
+                    }
+                    _ => Err(LoxError::CompileError),
+                }
             }
             _ => Err(LoxError::UnexpectedToken),
         }
@@ -363,7 +367,7 @@ impl<'a> Compiler<'a> {
     fn string(&mut self) -> Result<()> {
         match self.advance()? {
             Some(TokenType::Str(value)) => {
-                let handle = self.make_string(value);
+                let handle = self.make_string(value)?;
 
                 self.emit_const(handle)
             }
@@ -383,7 +387,7 @@ impl<'a> Compiler<'a> {
                 let (arg, get_op, set_op) = match self.resolve_local(&value)? {
                     Some(idx) => (idx, OpCode::GetLocal, OpCode::SetLocal),
                     None => {
-                        let handle = self.make_string(value);
+                        let handle = self.make_string(value)?;
 
                         (
                             self.chunk().add_constant(handle)?,
@@ -501,9 +505,15 @@ impl<'a> Compiler<'a> {
         &mut self.function.chunk
     }
 
-    fn make_string(&mut self, value: String) -> ValueHandle {
-        self.heap
-            .insert(Value::Obj(LoxObj::Str(ObjString { value })))
+    fn make_string(&mut self, value: String) -> Result<ValueHandle> {
+        // self.heap
+        //     .unwrap()
+        //     .insert(Value::Obj(LoxObj::Str(ObjString { value })))
+
+        match &mut self.heap {
+            Some(heap) => Ok(heap.insert(Value::Obj(LoxObj::Str(ObjString { value })))),
+            _ => Err(LoxError::CompileError),
+        }
     }
 }
 
