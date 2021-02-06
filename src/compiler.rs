@@ -22,12 +22,12 @@ enum FunctionType {
 
 pub struct Compiler<'a> {
     scanner: Peekable<Scanner<'a>>,
-    pub function: ObjFunction,
-    fun_type: FunctionType,
+    // pub function: ObjFunction,
+    pub functions: Vec<ObjFunction>,
     locals: Vec<Local>,
     scope_depth: isize,
     pub line: usize,
-    pub heap: Option<Heap<Value>>,
+    pub heap: Heap<Value>,
 }
 
 impl<'a> Compiler<'a> {
@@ -48,13 +48,43 @@ impl<'a> Compiler<'a> {
 
         Self {
             scanner: Scanner::new(source).peekable(),
-            function,
-            fun_type: FunctionType::Script,
+            functions: vec![function],
             locals,
             scope_depth: 0,
             line: 0,
-            heap: Some(heap),
+            heap,
         }
+    }
+
+    // pub fn from_scanner(scanner: Peekable<Scanner<'a>>, heap: Heap<Value>) -> Self {
+    //     let function = ObjFunction {
+    //         arity: 0,
+    //         chunk: Chunk::new(String::from("main")),
+    //         name: None,
+    //     };
+
+    //     let mut locals = Vec::with_capacity(std::u8::MAX as usize + 1);
+
+    //     locals.push(Local {
+    //         name: String::from(""),
+    //         depth: 0,
+    //     });
+
+    //     Self {
+    //         scanner: Some(scanner),
+    //         function,
+    //         fun_type: FunctionType::Function,
+    //         locals,
+    //         scope_depth: 0,
+    //         line: 0,
+    //         heap: Some(heap),
+    //     }
+    // }
+
+    pub fn compile(mut self) -> Result<ObjFunction> {
+        self.parse()?;
+
+        self.functions.pop().ok_or(LoxError::CompileError)
     }
 
     pub fn parse(&mut self) -> Result<()> {
@@ -68,12 +98,77 @@ impl<'a> Compiler<'a> {
     pub fn declaration(&mut self) -> Result<()> {
         match self.peek() {
             Some(TokenType::Var) => self.var_declaration(),
+            Some(TokenType::Fun) => self.fun_declaration(),
             _ => self.statement(),
         }
     }
 
+    fn fun_declaration(&mut self) -> Result<()> {
+        self.expect(TokenType::Fun)?;
+
+        let (global, name) = self.parse_function_name()?;
+
+        self.mark_initialized();
+
+        self.function(name)?;
+
+        self.define_variable(global)
+    }
+
+    fn function(&mut self, name: String) -> Result<()> {
+        // let scanner = self.scanner.take().unwrap();
+        // let heap = self.heap.take().unwrap();
+        // let mut compiler = Compiler::from_scanner(scanner, heap);
+        let handle = self.make_string(name)?;
+
+        self.functions.push(ObjFunction {
+            arity: 0,
+            chunk: Chunk::new(String::from("TODO: remove me")),
+            name: Some(handle),
+        });
+
+        self.begin_scope();
+
+        self.expect(TokenType::LParen)?;
+
+        loop {
+            match self.peek() {
+                Some(TokenType::RParen) | None => break,
+                _ => {
+                    let current_fn = self.current_fn_obj();
+
+                    current_fn.arity += 1;
+
+                    if current_fn.arity > 255 {
+                        return Err(LoxError::CompileError);
+                    }
+
+                    let param_const = self.parse_variable()?;
+                    self.define_variable(param_const)?;
+
+                    match self.peek() {
+                        Some(TokenType::RParen) | None => (),
+                        _ => {
+                            self.expect(TokenType::Comma)?;
+                        }
+                    }
+                }
+            }
+        }
+
+        self.expect(TokenType::RParen)?;
+        self.block()?;
+
+        let function_obj = self.functions.pop().unwrap();
+
+        let handle = self.heap.insert(Value::Obj(LoxObj::Fun(function_obj)));
+
+        self.emit_const(handle)
+    }
+
     fn var_declaration(&mut self) -> Result<()> {
         self.expect(TokenType::Var)?;
+
         let name = self.parse_variable()?;
 
         match self.peek() {
@@ -89,6 +184,23 @@ impl<'a> Compiler<'a> {
         self.define_variable(name)
     }
 
+    fn parse_function_name(&mut self) -> Result<(u8, String)> {
+        if self.scope_depth > 0 {
+            return Err(LoxError::CompileError);
+        }
+
+        match self.advance()? {
+            Some(TokenType::Ident(id)) => {
+                self.declare_variable(id.clone())?;
+
+                let handle = self.make_string(id.clone())?;
+
+                Ok((self.chunk().add_constant(handle)?, id))
+            }
+            token => Err(LoxError::UnexpectedToken(token)),
+        }
+    }
+
     fn parse_variable(&mut self) -> Result<u8> {
         match self.advance()? {
             Some(TokenType::Ident(id)) => {
@@ -102,7 +214,7 @@ impl<'a> Compiler<'a> {
                     self.chunk().add_constant(handle)
                 }
             }
-            _ => Err(LoxError::UnexpectedToken),
+            token => Err(LoxError::UnexpectedToken(token)),
         }
     }
 
@@ -138,11 +250,17 @@ impl<'a> Compiler<'a> {
         if self.scope_depth <= 0 {
             self.emit_bytes(OpCode::DefineGlobal as u8, name);
         } else {
-            let len = self.locals.len();
-            self.locals[len - 1].depth = self.scope_depth;
+            self.mark_initialized();
         }
 
         Ok(())
+    }
+
+    fn mark_initialized(&mut self) {
+        if self.scope_depth != 0 {
+            let len = self.locals.len();
+            self.locals[len - 1].depth = self.scope_depth;
+        }
     }
 
     fn statement(&mut self) -> Result<()> {
@@ -287,7 +405,9 @@ impl<'a> Compiler<'a> {
         }
 
         match self.peek() {
-            Some(TokenType::Equal) if can_assign => Err(LoxError::UnexpectedToken),
+            Some(TokenType::Equal) if can_assign => {
+                Err(LoxError::UnexpectedToken(Some(TokenType::Equal)))
+            }
             _ => Ok(()),
         }
     }
@@ -308,7 +428,7 @@ impl<'a> Compiler<'a> {
             TokenType::GreaterEq => self.emit_bytes(OpCode::Less as u8, OpCode::Not as u8),
             TokenType::Less => self.emit_byte(OpCode::Less as u8),
             TokenType::LessEq => self.emit_bytes(OpCode::Greater as u8, OpCode::Not as u8),
-            _ => return Err(LoxError::UnexpectedToken),
+            token => return Err(LoxError::UnexpectedToken(Some(token))),
         }
 
         Ok(())
@@ -322,7 +442,7 @@ impl<'a> Compiler<'a> {
         match op {
             TokenType::Minus => self.emit_byte(OpCode::Negate as u8),
             TokenType::Bang => self.emit_byte(OpCode::Not as u8),
-            _ => return Err(LoxError::UnexpectedToken),
+            token => return Err(LoxError::UnexpectedToken(Some(token))),
         }
 
         Ok(())
@@ -341,15 +461,17 @@ impl<'a> Compiler<'a> {
             Some(TokenType::Num(n)) => {
                 // let handle = self.heap.unwrap().insert(Value::Number(n));
                 // self.emit_const(*handle)
-                match &mut self.heap {
-                    Some(heap) => {
-                        heap.insert(Value::Number(n));
-                        Ok(())
-                    }
-                    _ => Err(LoxError::CompileError),
-                }
+                // match &mut self.heap {
+                //     Some(heap) => {
+                //         heap.insert(Value::Number(n));
+                //         Ok(())
+                //     }
+                //     _ => Err(LoxError::CompileError),
+                // }
+                self.heap.insert(Value::Number(n));
+                Ok(())
             }
-            _ => Err(LoxError::UnexpectedToken),
+            token => Err(LoxError::UnexpectedToken(token)),
         }
     }
 
@@ -371,7 +493,7 @@ impl<'a> Compiler<'a> {
 
                 self.emit_const(handle)
             }
-            _ => Err(LoxError::UnexpectedToken),
+            token => Err(LoxError::UnexpectedToken(token)),
         }
     }
 
@@ -408,7 +530,7 @@ impl<'a> Compiler<'a> {
 
                 Ok(())
             }
-            _ => Err(LoxError::UnexpectedToken),
+            token => Err(LoxError::UnexpectedToken(Some(token))),
         }
     }
 
@@ -497,12 +619,19 @@ impl<'a> Compiler<'a> {
     fn expect(&mut self, expected_type: TokenType) -> Result<TokenType> {
         match self.advance()? {
             Some(tok_type) if tok_type == expected_type => Ok(tok_type),
-            _ => Err(LoxError::UnexpectedToken),
+            token => Err(LoxError::UnexpectedToken(token)),
         }
     }
 
+    #[inline]
+    pub fn current_fn_obj(&mut self) -> &mut ObjFunction {
+        let i = self.functions.len() - 1;
+        &mut self.functions[i]
+    }
+
+    #[inline]
     pub fn chunk(&mut self) -> &mut Chunk {
-        &mut self.function.chunk
+        &mut self.current_fn_obj().chunk
     }
 
     fn make_string(&mut self, value: String) -> Result<ValueHandle> {
@@ -510,10 +639,13 @@ impl<'a> Compiler<'a> {
         //     .unwrap()
         //     .insert(Value::Obj(LoxObj::Str(ObjString { value })))
 
-        match &mut self.heap {
-            Some(heap) => Ok(heap.insert(Value::Obj(LoxObj::Str(ObjString { value })))),
-            _ => Err(LoxError::CompileError),
-        }
+        // match &mut self.heap {
+        //     Some(heap) => Ok(heap.insert(Value::Obj(LoxObj::Str(ObjString { value })))),
+        //     _ => Err(LoxError::CompileError),
+        // }
+        Ok(self
+            .heap
+            .insert(Value::Obj(LoxObj::Str(ObjString { value }))))
     }
 }
 

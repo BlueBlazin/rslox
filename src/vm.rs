@@ -1,3 +1,4 @@
+use crate::chunk::Chunk;
 use crate::error::{LoxError, Result};
 use crate::gc::Heap;
 use crate::object::{LoxObj, ObjFunction, ObjString};
@@ -5,8 +6,8 @@ use crate::opcodes::OpCode;
 use crate::value::{Value, ValueHandle};
 use std::collections::HashMap;
 
-const STACK_MAX: usize = 256;
 const FRAMES_MAX: usize = 64;
+const STACK_MAX: usize = FRAMES_MAX * 256;
 
 macro_rules! binary_op {
     ($op:tt, $self:expr) => {{
@@ -25,9 +26,9 @@ macro_rules! binary_op {
 }
 
 pub struct CallFrame {
-    pub function: ObjFunction,
+    pub function: ValueHandle,
     pub ip: usize,
-    pub slots: Vec<ValueHandle>,
+    pub fp: usize,
 }
 
 pub struct Vm {
@@ -35,24 +36,28 @@ pub struct Vm {
     pub heap: Heap<Value>,
     pub frames: Vec<CallFrame>,
     globals: HashMap<String, ValueHandle>,
-    function: ObjFunction,
-    ip: usize,
 }
 
 impl Vm {
-    pub fn new(function: ObjFunction, heap: Heap<Value>) -> Self {
+    pub fn new(heap: Heap<Value>) -> Self {
         Self {
-            stack: Vec::with_capacity(256),
+            stack: Vec::with_capacity(STACK_MAX),
             heap,
             frames: Vec::with_capacity(FRAMES_MAX),
             globals: HashMap::new(),
-            function,
-            ip: 0,
         }
     }
 
-    pub fn interpret(&mut self) -> Result<()> {
-        self.ip = 0;
+    pub fn interpret(&mut self, function: ObjFunction) -> Result<()> {
+        let handle = self.alloc(Value::Obj(LoxObj::Fun(function)));
+
+        self.push(handle)?;
+
+        self.frames.push(CallFrame {
+            function: handle,
+            ip: 0,
+            fp: 0,
+        });
 
         self.run()
     }
@@ -170,13 +175,15 @@ impl Vm {
                 }
                 OpCode::GetLocal => {
                     let idx = self.fetch() as usize;
-                    let handle = self.stack[idx];
+                    let fp = self.current_frame().fp;
+                    let handle = self.stack[fp + idx];
                     self.push(handle)?;
                 }
                 OpCode::SetLocal => {
                     let idx = self.fetch() as usize;
-                    let handle = self.stack.last().ok_or(LoxError::StackUnderflow)?;
-                    self.stack[idx] = *handle;
+                    let handle = *self.stack.last().ok_or(LoxError::StackUnderflow)?;
+                    let fp = self.current_frame().fp;
+                    self.stack[fp + idx] = handle;
                 }
                 OpCode::JumpIfFalse => {
                     let offset = self.fetch16() as usize;
@@ -184,16 +191,16 @@ impl Vm {
                     let handle = self.stack.last().ok_or(LoxError::StackUnderflow)?;
 
                     if self.heap.get(handle).unwrap().is_falsey() {
-                        self.ip += offset;
+                        self.current_frame().ip += offset;
                     }
                 }
                 OpCode::Jump => {
                     let offset = self.fetch16() as usize;
-                    self.ip += offset;
+                    self.current_frame().ip += offset;
                 }
                 OpCode::Loop => {
                     let offset = self.fetch16() as usize;
-                    self.ip -= offset;
+                    self.current_frame().ip -= offset;
                 }
             };
         }
@@ -215,17 +222,26 @@ impl Vm {
     }
 
     #[inline]
-    fn fetch(&mut self) -> u8 {
-        self.ip += 1;
+    fn current_frame(&mut self) -> &mut CallFrame {
+        let last = self.frames.len() - 1;
+        &mut self.frames[last]
+    }
 
-        self.function.chunk.code[self.ip - 1]
+    #[inline]
+    fn fetch(&mut self) -> u8 {
+        let frame = self.current_frame();
+        let ip = frame.ip;
+
+        frame.ip += 1;
+
+        self.chunk().unwrap().code[ip]
     }
 
     #[inline]
     fn fetch_const(&mut self) -> ValueHandle {
         let idx = self.fetch() as usize;
 
-        self.function.chunk.constants[idx]
+        self.chunk().unwrap().constants[idx]
     }
 
     #[inline]
@@ -266,5 +282,15 @@ impl Vm {
     #[inline]
     fn alloc(&mut self, value: Value) -> ValueHandle {
         self.heap.insert(value)
+    }
+
+    #[inline]
+    fn chunk(&mut self) -> Result<&Chunk> {
+        let handle = self.current_frame().function;
+
+        match self.get_value(handle)? {
+            Value::Obj(LoxObj::Fun(f)) => Ok(&f.chunk),
+            _ => Err(LoxError::RuntimeError),
+        }
     }
 }

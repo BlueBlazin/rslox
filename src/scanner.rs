@@ -55,7 +55,7 @@ impl<'a> Scanner<'a> {
         Some(
             value
                 .parse()
-                .map_err(|_| LoxError::UnexpectedToken)
+                .map_err(|_| LoxError::UnexpectedCharacter)
                 .map(|num: f64| Token {
                     tok_type: TokenType::Num(num),
                     line: self.line,
@@ -142,7 +142,7 @@ impl<'a> Scanner<'a> {
     fn expect(&mut self, value: char) -> Result<()> {
         match self.source.next() {
             Some(c) if c == value => Ok(()),
-            _ => Err(LoxError::UnexpectedToken),
+            _ => Err(LoxError::UnexpectedCharacter),
         }
     }
 }
@@ -191,7 +191,7 @@ impl<'a> Iterator for Scanner<'a> {
                 Some('"') => return self.scan_string(),
                 Some(c) if c.is_ascii_digit() => return self.scan_number(c),
                 Some(c) if c.is_ascii_alphabetic() || c == '_' => return self.scan_identifier(c),
-                Some(_) => return Some(Err(LoxError::UnexpectedToken)),
+                Some(_) => return Some(Err(LoxError::UnexpectedCharacter)),
                 None => return None,
             }
         }

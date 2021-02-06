@@ -22,7 +22,7 @@ mod tests {
         use crate::opcodes::OpCode;
 
         let source = r#"
-            "st" + "ri" + "ng";
+        4 + 3;
         "#;
 
         let heap = Heap::new();
@@ -34,16 +34,16 @@ mod tests {
 
         println!("{:?}", compiler.chunk());
 
-        let mut vm = vm::Vm::new(compiler.function, compiler.heap.unwrap());
-        vm.interpret().unwrap();
+        let mut vm = vm::Vm::new(compiler.heap);
+        vm.interpret(compiler.functions.pop().unwrap()).unwrap();
 
-        println!(
-            "{:?}",
-            &vm.heap
-                .objects
-                .iter()
-                .map(|x| vm.heap.get(x))
-                .collect::<Vec<_>>()
-        );
+        // println!(
+        //     "{:?}",
+        //     &vm.heap
+        //         .objects
+        //         .iter()
+        //         .map(|x| vm.heap.get(x))
+        //         .collect::<Vec<_>>()
+        // );
     }
 }
