@@ -22,7 +22,11 @@ mod tests {
         use crate::opcodes::OpCode;
 
         let source = r#"
-        4 + 3;
+        fun foo() {
+            print "bar";
+        }
+
+        print foo;
         "#;
 
         let heap = Heap::new();

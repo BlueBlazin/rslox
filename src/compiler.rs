@@ -15,10 +15,10 @@ struct Local {
     depth: isize,
 }
 
-enum FunctionType {
-    Function,
-    Script,
-}
+// enum FunctionType {
+//     Function,
+//     Script,
+// }
 
 pub struct Compiler<'a> {
     scanner: Peekable<Scanner<'a>>,
@@ -129,6 +129,22 @@ impl<'a> Compiler<'a> {
 
         self.begin_scope();
 
+        self.parse_parameters()?;
+
+        self.block()?;
+
+        let function_obj = self.functions.pop().unwrap();
+
+        let handle = self.heap.insert(Value::Obj(LoxObj::Fun(function_obj)));
+
+        self.emit_const(handle)
+    }
+
+    fn init_compiler(&mut self) {
+        self.scope_depth = 0;
+    }
+
+    fn parse_parameters(&mut self) -> Result<()> {
         self.expect(TokenType::LParen)?;
 
         loop {
@@ -157,13 +173,8 @@ impl<'a> Compiler<'a> {
         }
 
         self.expect(TokenType::RParen)?;
-        self.block()?;
 
-        let function_obj = self.functions.pop().unwrap();
-
-        let handle = self.heap.insert(Value::Obj(LoxObj::Fun(function_obj)));
-
-        self.emit_const(handle)
+        Ok(())
     }
 
     fn var_declaration(&mut self) -> Result<()> {
@@ -191,6 +202,7 @@ impl<'a> Compiler<'a> {
 
         match self.advance()? {
             Some(TokenType::Ident(id)) => {
+                // TODO: this is redundant, remove it
                 self.declare_variable(id.clone())?;
 
                 let handle = self.make_string(id.clone())?;
@@ -219,10 +231,12 @@ impl<'a> Compiler<'a> {
     }
 
     fn declare_variable(&mut self, name: String) -> Result<()> {
+        // variable is global
         if self.scope_depth == 0 {
             return Ok(());
         }
 
+        // variable is local
         for local in self.locals.iter().rev() {
             if local.depth != -1 && local.depth < self.scope_depth {
                 break;
@@ -264,6 +278,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn statement(&mut self) -> Result<()> {
+        dbg!("statement");
         match self.peek() {
             Some(TokenType::Print) => self.print_statement(),
             Some(TokenType::LBrace) => {
@@ -380,6 +395,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn expr_statement(&mut self) -> Result<()> {
+        dbg!("expr_statement");
         self.expression()?;
         self.expect(TokenType::Semicolon)?;
         self.emit_byte(OpCode::Pop as u8);
@@ -387,10 +403,12 @@ impl<'a> Compiler<'a> {
     }
 
     pub fn expression(&mut self) -> Result<()> {
+        dbg!("expression");
         self.parse_precedence(TokenType::Equal.precedence())
     }
 
     fn parse_precedence(&mut self, precedence: usize) -> Result<()> {
+        dbg!("parse_precedence");
         let can_assign = precedence <= TokenType::Equal.precedence();
 
         self.prefix(can_assign)?;
@@ -413,6 +431,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn binary(&mut self) -> Result<()> {
+        dbg!("binary");
         let op = self.advance()?.ok_or(LoxError::UnexpectedEOF)?;
 
         self.parse_precedence(op.precedence() + 1)?;
@@ -457,6 +476,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn number(&mut self) -> Result<()> {
+        dbg!("number");
         match self.advance()? {
             Some(TokenType::Num(n)) => {
                 // let handle = self.heap.unwrap().insert(Value::Number(n));
@@ -468,7 +488,8 @@ impl<'a> Compiler<'a> {
                 //     }
                 //     _ => Err(LoxError::CompileError),
                 // }
-                self.heap.insert(Value::Number(n));
+                let handle = self.heap.insert(Value::Number(n));
+                self.emit_const(handle)?;
                 Ok(())
             }
             token => Err(LoxError::UnexpectedToken(token)),
@@ -569,6 +590,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn prefix(&mut self, can_assign: bool) -> Result<()> {
+        dbg!("prefix");
         match self.peek().ok_or(LoxError::UnexpectedEOF)? {
             TokenType::LParen => self.grouping(),
             TokenType::Minus | TokenType::Bang => self.unary(),
@@ -581,6 +603,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn infix(&mut self) -> Result<()> {
+        dbg!("infix");
         match self.peek().ok_or(LoxError::UnexpectedEOF)? {
             TokenType::Plus
             | TokenType::Minus
@@ -635,14 +658,6 @@ impl<'a> Compiler<'a> {
     }
 
     fn make_string(&mut self, value: String) -> Result<ValueHandle> {
-        // self.heap
-        //     .unwrap()
-        //     .insert(Value::Obj(LoxObj::Str(ObjString { value })))
-
-        // match &mut self.heap {
-        //     Some(heap) => Ok(heap.insert(Value::Obj(LoxObj::Str(ObjString { value })))),
-        //     _ => Err(LoxError::CompileError),
-        // }
         Ok(self
             .heap
             .insert(Value::Obj(LoxObj::Str(ObjString { value }))))
