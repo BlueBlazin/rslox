@@ -119,6 +119,9 @@ impl<'a> Compiler<'a> {
         // let scanner = self.scanner.take().unwrap();
         // let heap = self.heap.take().unwrap();
         // let mut compiler = Compiler::from_scanner(scanner, heap);
+        TODO: use a context manager instead to compile a function
+
+
         let handle = self.make_string(name)?;
 
         self.functions.push(ObjFunction {
