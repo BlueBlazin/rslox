@@ -8,6 +8,7 @@ use crate::scanner::Scanner;
 use crate::token::{Token, TokenType};
 use crate::value::{Value, ValueHandle};
 use std::iter::Peekable;
+use std::mem;
 use std::str::Chars;
 
 struct Local {
@@ -22,8 +23,8 @@ struct Local {
 
 pub struct Compiler<'a> {
     scanner: Peekable<Scanner<'a>>,
-    // pub function: ObjFunction,
-    pub functions: Vec<ObjFunction>,
+    pub function: ObjFunction,
+    // pub functions: Vec<ObjFunction>,
     locals: Vec<Local>,
     scope_depth: isize,
     pub line: usize,
@@ -48,7 +49,8 @@ impl<'a> Compiler<'a> {
 
         Self {
             scanner: Scanner::new(source).peekable(),
-            functions: vec![function],
+            // functions: vec![function],
+            function,
             locals,
             scope_depth: 0,
             line: 0,
@@ -81,10 +83,8 @@ impl<'a> Compiler<'a> {
     //     }
     // }
 
-    pub fn compile(mut self) -> Result<ObjFunction> {
-        self.parse()?;
-
-        self.functions.pop().ok_or(LoxError::CompileError)
+    pub fn compile(mut self) -> Result<()> {
+        self.parse()
     }
 
     pub fn parse(&mut self) -> Result<()> {
@@ -115,36 +115,46 @@ impl<'a> Compiler<'a> {
         self.define_variable(global)
     }
 
+    // fn function(&mut self, name: String) -> Result<()> {
+    //     // let scanner = self.scanner.take().unwrap();
+    //     // let heap = self.heap.take().unwrap();
+    //     // let mut compiler = Compiler::from_scanner(scanner, heap);
+
+    //     // TODO: use a context manager instead to compile a function
+
+    //     let handle = self.make_string(name)?;
+
+    //     self.functions.push(ObjFunction {
+    //         arity: 0,
+    //         chunk: Chunk::new(String::from("TODO: remove me")),
+    //         name: Some(handle),
+    //     });
+
+    //     self.begin_scope();
+
+    //     self.parse_parameters()?;
+
+    //     self.block()?;
+
+    //     let function_obj = self.functions.pop().unwrap();
+
+    //     let handle = self.heap.insert(Value::Obj(LoxObj::Fun(function_obj)));
+
+    //     self.emit_const(handle)
+    // }
+
     fn function(&mut self, name: String) -> Result<()> {
-        // let scanner = self.scanner.take().unwrap();
-        // let heap = self.heap.take().unwrap();
-        // let mut compiler = Compiler::from_scanner(scanner, heap);
-        TODO: use a context manager instead to compile a function
+        let function_obj = self.with_function_ctx(name, &mut |this| {
+            this.begin_scope();
 
+            this.parse_parameters()?;
 
-        let handle = self.make_string(name)?;
-
-        self.functions.push(ObjFunction {
-            arity: 0,
-            chunk: Chunk::new(String::from("TODO: remove me")),
-            name: Some(handle),
-        });
-
-        self.begin_scope();
-
-        self.parse_parameters()?;
-
-        self.block()?;
-
-        let function_obj = self.functions.pop().unwrap();
+            this.block()
+        })?;
 
         let handle = self.heap.insert(Value::Obj(LoxObj::Fun(function_obj)));
 
         self.emit_const(handle)
-    }
-
-    fn init_compiler(&mut self) {
-        self.scope_depth = 0;
     }
 
     fn parse_parameters(&mut self) -> Result<()> {
@@ -154,15 +164,14 @@ impl<'a> Compiler<'a> {
             match self.peek() {
                 Some(TokenType::RParen) | None => break,
                 _ => {
-                    let current_fn = self.current_fn_obj();
+                    self.function.arity += 1;
 
-                    current_fn.arity += 1;
-
-                    if current_fn.arity > 255 {
+                    if self.function.arity > 255 {
                         return Err(LoxError::CompileError);
                     }
 
                     let param_const = self.parse_variable()?;
+
                     self.define_variable(param_const)?;
 
                     match self.peek() {
@@ -635,6 +644,35 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    fn with_function_ctx<T>(&mut self, name: String, compile_fn: &mut T) -> Result<ObjFunction>
+    where
+        T: FnMut(&mut Self) -> Result<()>,
+    {
+        let handle = self.make_string(name)?;
+
+        let old_scope_depth = mem::replace(&mut self.scope_depth, 0);
+
+        let old_locals = mem::replace(&mut self.locals, vec![]);
+
+        let old_function = mem::replace(
+            &mut self.function,
+            ObjFunction {
+                arity: 0,
+                chunk: Chunk::new(String::from("TODO: remove me")),
+                name: Some(handle),
+            },
+        );
+
+        compile_fn(self)?;
+
+        self.scope_depth = old_scope_depth;
+        self.locals = old_locals;
+
+        let compiled_function = mem::replace(&mut self.function, old_function);
+
+        Ok(compiled_function)
+    }
+
     fn peek(&mut self) -> Option<&TokenType> {
         match self.scanner.peek() {
             Some(Ok(Token { tok_type, .. })) => Some(tok_type),
@@ -649,15 +687,15 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    #[inline]
-    pub fn current_fn_obj(&mut self) -> &mut ObjFunction {
-        let i = self.functions.len() - 1;
-        &mut self.functions[i]
-    }
+    // #[inline]
+    // pub fn current_fn_obj(&mut self) -> &mut ObjFunction {
+    //     let i = self.functions.len() - 1;
+    //     &mut self.functions[i]
+    // }
 
     #[inline]
     pub fn chunk(&mut self) -> &mut Chunk {
-        &mut self.current_fn_obj().chunk
+        &mut self.function.chunk
     }
 
     fn make_string(&mut self, value: String) -> Result<ValueHandle> {
