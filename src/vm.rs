@@ -53,11 +53,13 @@ impl Vm {
 
         self.push(handle)?;
 
-        self.frames.push(CallFrame {
-            function: handle,
-            ip: 0,
-            fp: 0,
-        });
+        // self.frames.push(CallFrame {
+        //     function: handle,
+        //     ip: 0,
+        //     fp: 0,
+        // });
+
+        self.call_value(handle, 0)?;
 
         self.run()
     }
@@ -66,6 +68,12 @@ impl Vm {
         loop {
             match OpCode::from(self.fetch()) {
                 OpCode::Return => {
+                    let result = self.pop()?;
+
+                    self.frames.pop();
+
+                    self.push(result)?;
+
                     return Ok(());
                 }
                 OpCode::Constant => {
@@ -202,9 +210,46 @@ impl Vm {
                     let offset = self.fetch16() as usize;
                     self.current_frame().ip -= offset;
                 }
+                OpCode::Call => {
+                    let arg_count = self.fetch() as usize;
+
+                    let handle = if self.stack.len() > arg_count {
+                        let last = self.stack.len() - 1;
+
+                        self.stack[last - arg_count]
+                    } else {
+                        return Err(LoxError::RuntimeError);
+                    };
+
+                    self.call_value(handle, arg_count)?;
+                }
             };
         }
     }
+
+    fn call_value(&mut self, handle: ValueHandle, arg_count: usize) -> Result<()> {
+        match self.get_value(handle)? {
+            Value::Obj(LoxObj::Fun(_)) => {
+                // self.call(handle, arg_count)
+                self.frames.push(CallFrame {
+                    function: handle,
+                    ip: 0,
+                    fp: self.stack.len() - 1 - arg_count,
+                });
+
+                Ok(())
+            }
+            _ => Err(LoxError::RuntimeError),
+        }
+    }
+
+    // fn call(&mut self, handle: ValueHandle, arg_count: usize) {
+    //     self.frames.push(CallFrame {
+    //         function: handle,
+    //         ip: 0,
+    //         fp: self.stack.len() - 1 - arg_count - 1,
+    //     });
+    // }
 
     fn fetch_str_const(&mut self) -> Result<String> {
         let handle = self.fetch_const();
@@ -277,6 +322,10 @@ impl Vm {
 
     fn get_value(&self, handle: ValueHandle) -> Result<&Value> {
         self.heap.get(&handle).ok_or(LoxError::RuntimeError)
+    }
+
+    fn get_value_mut(&mut self, handle: ValueHandle) -> Result<&mut Value> {
+        self.heap.get_mut(&handle).ok_or(LoxError::RuntimeError)
     }
 
     #[inline]

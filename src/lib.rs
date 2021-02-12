@@ -26,7 +26,7 @@ mod tests {
             print "bar";
         }
 
-        print foo;
+        foo();
         "#;
 
         let heap = Heap::new();

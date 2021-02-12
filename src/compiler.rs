@@ -115,34 +115,6 @@ impl<'a> Compiler<'a> {
         self.define_variable(global)
     }
 
-    // fn function(&mut self, name: String) -> Result<()> {
-    //     // let scanner = self.scanner.take().unwrap();
-    //     // let heap = self.heap.take().unwrap();
-    //     // let mut compiler = Compiler::from_scanner(scanner, heap);
-
-    //     // TODO: use a context manager instead to compile a function
-
-    //     let handle = self.make_string(name)?;
-
-    //     self.functions.push(ObjFunction {
-    //         arity: 0,
-    //         chunk: Chunk::new(String::from("TODO: remove me")),
-    //         name: Some(handle),
-    //     });
-
-    //     self.begin_scope();
-
-    //     self.parse_parameters()?;
-
-    //     self.block()?;
-
-    //     let function_obj = self.functions.pop().unwrap();
-
-    //     let handle = self.heap.insert(Value::Obj(LoxObj::Fun(function_obj)));
-
-    //     self.emit_const(handle)
-    // }
-
     fn function(&mut self, name: String) -> Result<()> {
         let function_obj = self.with_function_ctx(name, &mut |this| {
             this.begin_scope();
@@ -192,7 +164,9 @@ impl<'a> Compiler<'a> {
     fn var_declaration(&mut self) -> Result<()> {
         self.expect(TokenType::Var)?;
 
-        let name = self.parse_variable()?;
+        // const_idx is the location in the constants array
+        // where the variable name (its handle) will be stored
+        let const_idx = self.parse_variable()?;
 
         match self.peek() {
             Some(TokenType::Equal) => {
@@ -204,22 +178,21 @@ impl<'a> Compiler<'a> {
 
         self.expect(TokenType::Semicolon)?;
 
-        self.define_variable(name)
+        self.define_variable(const_idx)
     }
 
     fn parse_function_name(&mut self) -> Result<(u8, String)> {
-        if self.scope_depth > 0 {
-            return Err(LoxError::CompileError);
-        }
-
         match self.advance()? {
             Some(TokenType::Ident(id)) => {
-                // TODO: this is redundant, remove it
                 self.declare_variable(id.clone())?;
 
-                let handle = self.make_string(id.clone())?;
+                if self.scope_depth > 0 {
+                    Ok((0, id))
+                } else {
+                    let handle = self.make_string(id.clone())?;
 
-                Ok((self.chunk().add_constant(handle)?, id))
+                    Ok((self.chunk().add_constant(handle)?, id))
+                }
             }
             token => Err(LoxError::UnexpectedToken(token)),
         }
@@ -272,9 +245,9 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn define_variable(&mut self, name: u8) -> Result<()> {
+    fn define_variable(&mut self, const_idx: u8) -> Result<()> {
         if self.scope_depth <= 0 {
-            self.emit_bytes(OpCode::DefineGlobal as u8, name);
+            self.emit_bytes(OpCode::DefineGlobal as u8, const_idx);
         } else {
             self.mark_initialized();
         }
@@ -491,15 +464,6 @@ impl<'a> Compiler<'a> {
         dbg!("number");
         match self.advance()? {
             Some(TokenType::Num(n)) => {
-                // let handle = self.heap.unwrap().insert(Value::Number(n));
-                // self.emit_const(*handle)
-                // match &mut self.heap {
-                //     Some(heap) => {
-                //         heap.insert(Value::Number(n));
-                //         Ok(())
-                //     }
-                //     _ => Err(LoxError::CompileError),
-                // }
                 let handle = self.heap.insert(Value::Number(n));
                 self.emit_const(handle)?;
                 Ok(())
@@ -531,11 +495,13 @@ impl<'a> Compiler<'a> {
     }
 
     fn variable(&mut self, can_assign: bool) -> Result<()> {
+        dbg!("variable");
         let name = self.advance()?.ok_or(LoxError::UnexpectedEOF)?;
         self.named_variable(name, can_assign)
     }
 
     fn named_variable(&mut self, name: TokenType, can_assign: bool) -> Result<()> {
+        dbg!("named_variable");
         match name {
             TokenType::Ident(value) => {
                 // let arg = self.chunk().add_constant(Const::Str(s))?;
@@ -601,6 +567,45 @@ impl<'a> Compiler<'a> {
         self.patch_jump(end_jump)
     }
 
+    fn call(&mut self) -> Result<()> {
+        self.expect(TokenType::LParen)?;
+
+        let arg_count = self.argument_list()?;
+
+        self.emit_bytes(OpCode::Call as u8, arg_count);
+
+        Ok(())
+    }
+
+    fn argument_list(&mut self) -> Result<u8> {
+        let mut arg_count = 0;
+
+        loop {
+            match self.peek() {
+                Some(TokenType::RParen) | None => break,
+                _ => {
+                    if arg_count == 255 {
+                        return Err(LoxError::CompileError);
+                    }
+
+                    self.expression()?;
+
+                    arg_count += 1;
+
+                    match self.peek() {
+                        Some(TokenType::RParen) | None => (),
+                        _ => {
+                            self.expect(TokenType::Comma)?;
+                        }
+                    };
+                }
+            }
+        }
+
+        self.expect(TokenType::RParen)?;
+        Ok(arg_count)
+    }
+
     fn prefix(&mut self, can_assign: bool) -> Result<()> {
         dbg!("prefix");
         match self.peek().ok_or(LoxError::UnexpectedEOF)? {
@@ -629,6 +634,7 @@ impl<'a> Compiler<'a> {
             | TokenType::GreaterEq => self.binary(),
             TokenType::And => self.and(),
             TokenType::Or => self.or(),
+            TokenType::LParen => self.call(),
             _ => unimplemented!(),
         }
     }
@@ -652,7 +658,13 @@ impl<'a> Compiler<'a> {
 
         let old_scope_depth = mem::replace(&mut self.scope_depth, 0);
 
-        let old_locals = mem::replace(&mut self.locals, vec![]);
+        let old_locals = mem::replace(
+            &mut self.locals,
+            vec![Local {
+                depth: 0,
+                name: String::from(""),
+            }],
+        );
 
         let old_function = mem::replace(
             &mut self.function,
@@ -667,6 +679,8 @@ impl<'a> Compiler<'a> {
 
         self.scope_depth = old_scope_depth;
         self.locals = old_locals;
+
+        self.emit_byte(OpCode::Return as u8);
 
         let compiled_function = mem::replace(&mut self.function, old_function);
 
@@ -712,8 +726,8 @@ impl<'a> Codegen for Compiler<'a> {
     }
 
     fn emit_const(&mut self, handle: ValueHandle) -> Result<()> {
-        let constant = self.chunk().add_constant(handle)?;
-        self.emit_bytes(OpCode::Constant as u8, constant);
+        let const_idx = self.chunk().add_constant(handle)?;
+        self.emit_bytes(OpCode::Constant as u8, const_idx);
         Ok(())
     }
 

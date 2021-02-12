@@ -24,6 +24,7 @@ pub enum OpCode {
     JumpIfFalse,
     Jump,
     Loop,
+    Call,
 }
 
 impl From<u8> for OpCode {
@@ -53,6 +54,7 @@ impl From<u8> for OpCode {
             0x15 => OpCode::JumpIfFalse,
             0x16 => OpCode::Jump,
             0x17 => OpCode::Loop,
+            0x18 => OpCode::Call,
             _ => panic!("Byte doesn't map to any opcode."),
         }
     }

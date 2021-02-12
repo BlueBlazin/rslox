@@ -60,7 +60,7 @@ impl TokenType {
             TokenType::Plus | TokenType::Minus => 6,
             TokenType::Star | TokenType::Slash => 7,
             TokenType::Bang => 8,
-            TokenType::Dot => 9,
+            TokenType::Dot | TokenType::LParen => 9,
             _ => 0,
         }
     }
