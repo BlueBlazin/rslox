@@ -1,7 +1,7 @@
 use crate::gc::Handle;
 use crate::object::LoxObj;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Value {
     Obj(LoxObj),
     Bool(bool),

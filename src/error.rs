@@ -1,4 +1,5 @@
 use crate::token::TokenType;
+use crate::value::Value;
 
 #[derive(Debug)]
 pub enum LoxError {
@@ -11,6 +12,18 @@ pub enum LoxError {
     TypeError,
     TooManyLocalVariables,
     UnexpectedCharacter,
+    InvalidTypeForAddition,
+    InternalError(Internal),
+    InvalidTypeForEquals,
+    ValueNotCallable,
+    UnexpectedValue(Value),
+}
+
+#[derive(Debug)]
+pub enum Internal {
+    InvalidHandle,
+    GlobalLookupFailure,
+    CorruptedStack,
 }
 
 pub type Result<T> = std::result::Result<T, LoxError>;

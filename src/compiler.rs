@@ -701,12 +701,6 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    // #[inline]
-    // pub fn current_fn_obj(&mut self) -> &mut ObjFunction {
-    //     let i = self.functions.len() - 1;
-    //     &mut self.functions[i]
-    // }
-
     #[inline]
     pub fn chunk(&mut self) -> &mut Chunk {
         &mut self.function.chunk

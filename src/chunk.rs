@@ -1,6 +1,7 @@
 use crate::error::{LoxError, Result};
 use crate::value::ValueHandle;
 
+#[derive(Clone)]
 pub struct Chunk {
     pub name: String,
     pub code: Vec<u8>,

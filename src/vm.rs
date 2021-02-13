@@ -1,5 +1,5 @@
 use crate::chunk::Chunk;
-use crate::error::{LoxError, Result};
+use crate::error::{Internal, LoxError, Result};
 use crate::gc::Heap;
 use crate::object::{LoxObj, ObjFunction, ObjString};
 use crate::opcodes::OpCode;
@@ -32,19 +32,22 @@ pub struct CallFrame {
 }
 
 pub struct Vm {
-    pub stack: Vec<ValueHandle>,
+    pub stack: Vec<Option<ValueHandle>>,
     pub heap: Heap<Value>,
     pub frames: Vec<CallFrame>,
     globals: HashMap<String, ValueHandle>,
+    sp: usize,
 }
 
 impl Vm {
     pub fn new(heap: Heap<Value>) -> Self {
         Self {
-            stack: Vec::with_capacity(STACK_MAX),
+            // stack: Vec::with_capacity(STACK_MAX),
+            stack: vec![None; STACK_MAX],
             heap,
             frames: Vec::with_capacity(FRAMES_MAX),
             globals: HashMap::new(),
+            sp: 0,
         }
     }
 
@@ -105,7 +108,7 @@ impl Vm {
 
                             self.push_value(Value::Obj(LoxObj::Str(ObjString { value })))?;
                         }
-                        _ => return Err(LoxError::TypeError),
+                        _ => return Err(LoxError::InvalidTypeForAddition),
                     }
                 }
                 OpCode::Subtract => binary_op!(-, self),
@@ -122,7 +125,7 @@ impl Vm {
                     let value = self
                         .heap
                         .get(&handle)
-                        .ok_or(LoxError::RuntimeError)?
+                        .ok_or(LoxError::InternalError(Internal::InvalidHandle))?
                         .is_falsey();
 
                     self.push_value(Value::Bool(value))?;
@@ -143,7 +146,7 @@ impl Vm {
                             let cmp = a.value == b.value;
                             self.push_value(Value::Bool(cmp))?;
                         }
-                        _ => return Err(LoxError::TypeError),
+                        _ => return Err(LoxError::InvalidTypeForEquals),
                     }
                 }
                 OpCode::Greater => binary_op!(>, self, Bool),
@@ -167,7 +170,10 @@ impl Vm {
                     // for querying the globals hash table.
                     // NOTE: if that is possible, take care to avoid GC cleanup.
                     let name = self.fetch_str_const()?;
-                    let handle = *self.globals.get(&name).ok_or(LoxError::RuntimeError)?;
+                    let handle = *self
+                        .globals
+                        .get(&name)
+                        .ok_or(LoxError::InternalError(Internal::GlobalLookupFailure))?;
 
                     self.push(handle)?;
                 }
@@ -175,30 +181,31 @@ impl Vm {
                     let name = self.fetch_str_const()?;
 
                     if !self.globals.contains_key(&name) {
-                        return Err(LoxError::RuntimeError);
+                        return Err(LoxError::InternalError(Internal::GlobalLookupFailure));
                     }
 
-                    let handle = self.stack.last().ok_or(LoxError::StackUnderflow)?;
-                    self.globals.insert(name, *handle);
+                    let handle = self.peek()?;
+
+                    self.globals.insert(name, handle);
                 }
                 OpCode::GetLocal => {
                     let idx = self.fetch() as usize;
                     let fp = self.current_frame().fp;
-                    let handle = self.stack[fp + idx];
+                    let handle = self.stack[fp + idx].ok_or(LoxError::StackOverflow)?;
                     self.push(handle)?;
                 }
                 OpCode::SetLocal => {
                     let idx = self.fetch() as usize;
-                    let handle = *self.stack.last().ok_or(LoxError::StackUnderflow)?;
+                    let handle = self.peek()?;
                     let fp = self.current_frame().fp;
-                    self.stack[fp + idx] = handle;
+                    self.stack[fp + idx] = Some(handle);
                 }
                 OpCode::JumpIfFalse => {
                     let offset = self.fetch16() as usize;
 
-                    let handle = self.stack.last().ok_or(LoxError::StackUnderflow)?;
+                    let handle = self.peek()?;
 
-                    if self.heap.get(handle).unwrap().is_falsey() {
+                    if self.get_value(handle).unwrap().is_falsey() {
                         self.current_frame().ip += offset;
                     }
                 }
@@ -213,10 +220,8 @@ impl Vm {
                 OpCode::Call => {
                     let arg_count = self.fetch() as usize;
 
-                    let handle = if self.stack.len() > arg_count {
-                        let last = self.stack.len() - 1;
-
-                        self.stack[last - arg_count]
+                    let handle = if self.sp > arg_count {
+                        self.stack[self.sp - 1 - arg_count].ok_or(LoxError::StackUnderflow)?
                     } else {
                         return Err(LoxError::RuntimeError);
                     };
@@ -230,33 +235,24 @@ impl Vm {
     fn call_value(&mut self, handle: ValueHandle, arg_count: usize) -> Result<()> {
         match self.get_value(handle)? {
             Value::Obj(LoxObj::Fun(_)) => {
-                // self.call(handle, arg_count)
                 self.frames.push(CallFrame {
                     function: handle,
                     ip: 0,
-                    fp: self.stack.len() - 1 - arg_count,
+                    fp: self.sp - 1 - arg_count,
                 });
 
                 Ok(())
             }
-            _ => Err(LoxError::RuntimeError),
+            _ => Err(LoxError::ValueNotCallable),
         }
     }
-
-    // fn call(&mut self, handle: ValueHandle, arg_count: usize) {
-    //     self.frames.push(CallFrame {
-    //         function: handle,
-    //         ip: 0,
-    //         fp: self.stack.len() - 1 - arg_count - 1,
-    //     });
-    // }
 
     fn fetch_str_const(&mut self) -> Result<String> {
         let handle = self.fetch_const();
 
-        match self.heap.get(&handle) {
-            Some(Value::Obj(LoxObj::Str(ObjString { value }))) => Ok(value.clone()),
-            _ => Err(LoxError::RuntimeError),
+        match self.get_value(handle)? {
+            Value::Obj(LoxObj::Str(ObjString { value })) => Ok(value.clone()),
+            value => Err(LoxError::UnexpectedValue(value.clone())),
         }
     }
 
@@ -291,12 +287,12 @@ impl Vm {
 
     #[inline]
     fn push(&mut self, handle: ValueHandle) -> Result<()> {
-        if self.stack.len() < STACK_MAX {
-            self.stack.push(handle);
-
-            Ok(())
-        } else {
+        if self.sp == self.stack.len() {
             Err(LoxError::StackOverflow)
+        } else {
+            self.stack[self.sp] = Some(handle);
+            self.sp += 1;
+            Ok(())
         }
     }
 
@@ -308,24 +304,42 @@ impl Vm {
 
     #[inline]
     fn pop(&mut self) -> Result<ValueHandle> {
-        self.stack.pop().ok_or(LoxError::StackUnderflow)
+        if self.sp == 0 {
+            return Err(LoxError::StackUnderflow);
+        }
+
+        self.sp -= 1;
+
+        self.stack[self.sp]
+            .take()
+            .ok_or(LoxError::InternalError(Internal::CorruptedStack))
+    }
+
+    fn peek(&mut self) -> Result<ValueHandle> {
+        self.stack[self.sp - 1].ok_or(LoxError::InternalError(Internal::CorruptedStack))
     }
 
     fn pop_number(&mut self) -> Result<f64> {
         let handle = self.pop()?;
 
-        match self.heap.get(&handle) {
-            Some(Value::Number(n)) => Ok(*n),
-            _ => Err(LoxError::TypeError),
+        match self.get_value(handle)? {
+            Value::Number(n) => Ok(*n),
+            value => Err(LoxError::UnexpectedValue(value.clone())),
         }
     }
 
+    #[inline]
     fn get_value(&self, handle: ValueHandle) -> Result<&Value> {
-        self.heap.get(&handle).ok_or(LoxError::RuntimeError)
+        self.heap
+            .get(&handle)
+            .ok_or(LoxError::InternalError(Internal::InvalidHandle))
     }
 
+    #[inline]
     fn get_value_mut(&mut self, handle: ValueHandle) -> Result<&mut Value> {
-        self.heap.get_mut(&handle).ok_or(LoxError::RuntimeError)
+        self.heap
+            .get_mut(&handle)
+            .ok_or(LoxError::InternalError(Internal::InvalidHandle))
     }
 
     #[inline]
