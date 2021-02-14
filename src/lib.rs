@@ -40,14 +40,5 @@ mod tests {
 
         let mut vm = vm::Vm::new(compiler.heap);
         vm.interpret(compiler.function).unwrap();
-
-        // println!(
-        //     "{:?}",
-        //     &vm.heap
-        //         .objects
-        //         .iter()
-        //         .map(|x| vm.heap.get(x))
-        //         .collect::<Vec<_>>()
-        // );
     }
 }

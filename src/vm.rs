@@ -42,7 +42,6 @@ pub struct Vm {
 impl Vm {
     pub fn new(heap: Heap<Value>) -> Self {
         Self {
-            // stack: Vec::with_capacity(STACK_MAX),
             stack: vec![None; STACK_MAX],
             heap,
             frames: Vec::with_capacity(FRAMES_MAX),
@@ -55,12 +54,6 @@ impl Vm {
         let handle = self.alloc(Value::Obj(LoxObj::Fun(function)));
 
         self.push(handle)?;
-
-        // self.frames.push(CallFrame {
-        //     function: handle,
-        //     ip: 0,
-        //     fp: 0,
-        // });
 
         self.call_value(handle, 0)?;
 
@@ -220,11 +213,14 @@ impl Vm {
                 OpCode::Call => {
                     let arg_count = self.fetch() as usize;
 
-                    let handle = if self.sp > arg_count {
-                        self.stack[self.sp - 1 - arg_count].ok_or(LoxError::StackUnderflow)?
-                    } else {
-                        return Err(LoxError::RuntimeError);
-                    };
+                    // let handle = if self.sp > arg_count {
+                    //     self.stack[self.sp - 1 - arg_count].ok_or(LoxError::StackUnderflow)?
+                    // } else {
+                    //     return Err(LoxError::RuntimeError);
+                    // };
+
+                    let handle =
+                        self.stack[self.sp - 1 - arg_count].ok_or(LoxError::StackUnderflow)?;
 
                     self.call_value(handle, arg_count)?;
                 }
@@ -235,10 +231,11 @@ impl Vm {
     fn call_value(&mut self, handle: ValueHandle, arg_count: usize) -> Result<()> {
         match self.get_value(handle)? {
             Value::Obj(LoxObj::Fun(_)) => {
+                dbg!("call_value");
                 self.frames.push(CallFrame {
                     function: handle,
                     ip: 0,
-                    fp: self.sp - 1 - arg_count,
+                    fp: self.sp - arg_count,
                 });
 
                 Ok(())
@@ -285,7 +282,6 @@ impl Vm {
         self.chunk().unwrap().constants[idx]
     }
 
-    #[inline]
     fn push(&mut self, handle: ValueHandle) -> Result<()> {
         if self.sp == self.stack.len() {
             Err(LoxError::StackOverflow)
@@ -302,7 +298,6 @@ impl Vm {
         self.push(handle)
     }
 
-    #[inline]
     fn pop(&mut self) -> Result<ValueHandle> {
         if self.sp == 0 {
             return Err(LoxError::StackUnderflow);
