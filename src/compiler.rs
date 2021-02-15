@@ -680,7 +680,7 @@ impl<'a> Compiler<'a> {
         self.scope_depth = old_scope_depth;
         self.locals = old_locals;
 
-        self.emit_byte(OpCode::Return as u8);
+        self.emit_return();
 
         let compiled_function = mem::replace(&mut self.function, old_function);
 
@@ -710,6 +710,11 @@ impl<'a> Compiler<'a> {
         Ok(self
             .heap
             .insert(Value::Obj(LoxObj::Str(ObjString { value }))))
+    }
+
+    fn emit_return(&mut self) {
+        self.emit_byte(OpCode::Nil as u8);
+        self.emit_byte(OpCode::Return as u8);
     }
 }
 

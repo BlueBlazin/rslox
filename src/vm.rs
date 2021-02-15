@@ -61,16 +61,17 @@ impl Vm {
     }
 
     fn run(&mut self) -> Result<()> {
-        loop {
-            match OpCode::from(self.fetch()) {
+        while let Some(opcode) = self.fetch_opcode() {
+            match OpCode::from(*opcode) {
                 OpCode::Return => {
-                    let result = self.pop()?;
+                    let handle = self.pop()?;
 
-                    self.frames.pop();
+                    let old_frame = self.frames.pop().unwrap();
 
-                    self.push(result)?;
+                    let mut current_frame = self.current_frame();
+                    current_frame.fp = old_frame.fp;
 
-                    return Ok(());
+                    self.push(handle)?;
                 }
                 OpCode::Constant => {
                     let handle = self.fetch_const();
@@ -226,6 +227,8 @@ impl Vm {
                 }
             };
         }
+
+        return Ok(());
     }
 
     fn call_value(&mut self, handle: ValueHandle, arg_count: usize) -> Result<()> {
@@ -263,6 +266,16 @@ impl Vm {
     fn current_frame(&mut self) -> &mut CallFrame {
         let last = self.frames.len() - 1;
         &mut self.frames[last]
+    }
+
+    #[inline]
+    fn fetch_opcode(&mut self) -> Option<&u8> {
+        let frame = self.current_frame();
+        let ip = frame.ip;
+
+        frame.ip += 1;
+
+        self.chunk().unwrap().code.get(ip)
     }
 
     #[inline]

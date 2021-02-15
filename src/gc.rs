@@ -81,10 +81,8 @@ impl<T> Heap<T> {
     }
 
     pub fn remove(&mut self, handle: Handle<T>) {
-        debug_assert!(
-            self.objects.remove(&handle),
-            "Attempted to remove handle not in heap."
-        );
+        let res = self.objects.remove(&handle);
+        debug_assert!(!res, "Attempted to remove handle not in heap.");
     }
 }
 

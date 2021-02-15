@@ -17,16 +17,15 @@ mod tests {
 
     #[test]
     fn test_sandbox() {
-        use crate::codegen::Codegen;
         use crate::gc::Heap;
-        use crate::opcodes::OpCode;
 
         let source = r#"
         fun foo(x, y) {
             print x * y;
         }
 
-        foo(7, 6);
+        print foo(7, 6);
+        print 42;
         "#;
 
         let heap = Heap::new();
@@ -34,7 +33,6 @@ mod tests {
         let mut compiler = compiler::Compiler::new(source.chars(), heap);
 
         compiler.parse().unwrap();
-        compiler.emit_byte(OpCode::Return as u8);
 
         println!("{:?}", compiler.chunk());
 
