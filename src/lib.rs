@@ -22,6 +22,8 @@ mod tests {
         let source = r#"
         fun foo(x, y) {
             print x * y;
+
+            return x * y;
         }
 
         print foo(7, 6);

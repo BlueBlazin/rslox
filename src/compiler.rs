@@ -16,15 +16,16 @@ struct Local {
     depth: isize,
 }
 
-// enum FunctionType {
-//     Function,
-//     Script,
-// }
+#[derive(PartialEq)]
+enum FunctionType {
+    Function,
+    Script,
+}
 
 pub struct Compiler<'a> {
     scanner: Peekable<Scanner<'a>>,
     pub function: ObjFunction,
-    // pub functions: Vec<ObjFunction>,
+    fun_type: FunctionType,
     locals: Vec<Local>,
     scope_depth: isize,
     pub line: usize,
@@ -49,8 +50,8 @@ impl<'a> Compiler<'a> {
 
         Self {
             scanner: Scanner::new(source).peekable(),
-            // functions: vec![function],
             function,
+            fun_type: FunctionType::Script,
             locals,
             scope_depth: 0,
             line: 0,
@@ -274,6 +275,7 @@ impl<'a> Compiler<'a> {
             }
             Some(TokenType::If) => self.if_statement(),
             Some(TokenType::While) => self.while_statement(),
+            Some(TokenType::Return) => self.return_statement(),
             _ => self.expr_statement(),
         }
     }
@@ -377,6 +379,26 @@ impl<'a> Compiler<'a> {
         self.emit_byte(OpCode::Pop as u8);
 
         Ok(())
+    }
+
+    fn return_statement(&mut self) -> Result<()> {
+        if self.fun_type == FunctionType::Script {
+            return Err(LoxError::CompileError);
+        }
+
+        self.expect(TokenType::Return)?;
+
+        match self.peek() {
+            Some(TokenType::Semicolon) => {
+                self.emit_return();
+            }
+            _ => {
+                self.expression()?;
+                self.emit_byte(OpCode::Return as u8);
+            }
+        }
+
+        self.expect(TokenType::Semicolon).map(|_| ())
     }
 
     fn expr_statement(&mut self) -> Result<()> {
@@ -658,6 +680,8 @@ impl<'a> Compiler<'a> {
 
         let old_scope_depth = mem::replace(&mut self.scope_depth, 0);
 
+        let old_fun_type = mem::replace(&mut self.fun_type, FunctionType::Function);
+
         let old_locals = mem::replace(
             &mut self.locals,
             vec![Local {
@@ -679,6 +703,7 @@ impl<'a> Compiler<'a> {
 
         self.scope_depth = old_scope_depth;
         self.locals = old_locals;
+        self.fun_type = old_fun_type;
 
         self.emit_return();
 
