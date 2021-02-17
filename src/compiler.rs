@@ -109,6 +109,8 @@ impl<'a> Compiler<'a> {
 
         let (global, name) = self.parse_function_name()?;
 
+        // The mark_initialized here is for functions defined outside
+        // the global scope.
         self.mark_initialized();
 
         self.function(name)?;
@@ -257,6 +259,9 @@ impl<'a> Compiler<'a> {
     }
 
     fn mark_initialized(&mut self) {
+        // Since mark_initialized is called indiscriminately
+        // on function declaration, the conditional prevents
+        // global functions from being marked.
         if self.scope_depth != 0 {
             let len = self.locals.len();
             self.locals[len - 1].depth = self.scope_depth;
@@ -556,7 +561,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn resolve_local(&mut self, name: &str) -> Result<Option<u8>> {
-        for (idx, local) in self.locals.iter().rev().enumerate() {
+        for (idx, local) in self.locals.iter().enumerate().rev() {
             if &local.name == name {
                 if local.depth == -1 {
                     return Err(LoxError::CompileError);

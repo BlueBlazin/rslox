@@ -20,14 +20,15 @@ mod tests {
         use crate::gc::Heap;
 
         let source = r#"
-        fun foo(x, y) {
-            print x * y;
+        fun fib(n) {
+            if (n < 2) {
+                return n;
+            }
 
-            return x * y;
+            return fib(n - 1) + fib(n - 2);
         }
 
-        print foo(7, 6);
-        print 42;
+        print fib(8);
         "#;
 
         let heap = Heap::new();

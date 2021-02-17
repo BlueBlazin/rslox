@@ -66,10 +66,9 @@ impl Vm {
                 OpCode::Return => {
                     let handle = self.pop()?;
 
-                    let old_frame = self.frames.pop().unwrap();
+                    let popped_frame = self.frames.pop().unwrap();
 
-                    let mut current_frame = self.current_frame();
-                    current_frame.fp = old_frame.fp;
+                    self.sp = popped_frame.fp;
 
                     self.push(handle)?;
                 }
@@ -148,7 +147,6 @@ impl Vm {
 
                 OpCode::Print => {
                     let handle = self.pop()?;
-
                     println!("{:?}", self.get_value(handle));
                 }
                 OpCode::Pop => {
@@ -214,12 +212,6 @@ impl Vm {
                 OpCode::Call => {
                     let arg_count = self.fetch() as usize;
 
-                    // let handle = if self.sp > arg_count {
-                    //     self.stack[self.sp - 1 - arg_count].ok_or(LoxError::StackUnderflow)?
-                    // } else {
-                    //     return Err(LoxError::RuntimeError);
-                    // };
-
                     let handle =
                         self.stack[self.sp - 1 - arg_count].ok_or(LoxError::StackUnderflow)?;
 
@@ -234,11 +226,10 @@ impl Vm {
     fn call_value(&mut self, handle: ValueHandle, arg_count: usize) -> Result<()> {
         match self.get_value(handle)? {
             Value::Obj(LoxObj::Fun(_)) => {
-                dbg!("call_value");
                 self.frames.push(CallFrame {
                     function: handle,
                     ip: 0,
-                    fp: self.sp - arg_count,
+                    fp: self.sp - 1 - arg_count,
                 });
 
                 Ok(())

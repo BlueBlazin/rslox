@@ -10,7 +10,7 @@ use std::hash::{Hash, Hasher};
 
 #[derive(Debug)]
 pub struct Handle<T> {
-    ptr: *mut T,
+    pub ptr: *mut T,
 }
 
 impl<T> Handle<T> {}

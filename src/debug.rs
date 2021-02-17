@@ -12,11 +12,14 @@ macro_rules! simple_instr {
 macro_rules! const_instr {
     ($output:expr, $i:expr, $opcode:expr, $self:expr) => {{
         let constant = $self.code[$i + 1] as usize;
+        let handle = $self.constants[constant];
 
-        $output.push_str(&format!(
-            "{:12} {:4} '{:?}'\n",
-            $opcode, constant, $self.constants[constant]
-        ));
+        // It's either have an unsafe here or make debug a separate function
+        // which gets passed the `heap` to get values with further checks.
+        // Is the convenience of implementing fmt::Debug worth the 'unsafety'?
+        let value = unsafe { &*handle.ptr };
+
+        $output.push_str(&format!("{:12} {:4} '{:?}'\n", $opcode, constant, value));
 
         $i += 2;
     }};
