@@ -1,15 +1,24 @@
 use crate::gc::Handle;
-use crate::object::{ObjClosure, ObjFunction, ObjString};
+use crate::object::{ObjClosure, ObjString};
 
 #[derive(Debug, Clone)]
 pub enum Value {
     Str(ObjString),
     Closure(ObjClosure),
-    Fun(ObjFunction),
     Bool(bool),
     Number(f64),
     Nil,
 }
+
+// #[derive(Debug, Clone)]
+// pub enum Value {
+//     Str(ObjString),
+//     Closure(ObjClosure),
+//     Fun(ObjFunction),
+//     Bool(bool),
+//     Number(f64),
+//     Nil,
+// }
 
 impl Value {
     pub fn is_falsey(&self) -> bool {

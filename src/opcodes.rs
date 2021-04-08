@@ -25,6 +25,7 @@ pub enum OpCode {
     Jump,
     Loop,
     Call,
+    Closure,
 }
 
 impl From<u8> for OpCode {
@@ -55,6 +56,7 @@ impl From<u8> for OpCode {
             0x16 => OpCode::Jump,
             0x17 => OpCode::Loop,
             0x18 => OpCode::Call,
+            0x19 => OpCode::Closure,
             _ => panic!("Byte doesn't map to any opcode."),
         }
     }

@@ -88,6 +88,7 @@ impl fmt::Debug for Chunk {
                 OpCode::Jump => jump_instr!(output, i, opcode, 1, self),
                 OpCode::Loop => jump_instr!(output, i, opcode, 1, self),
                 OpCode::Call => byte_instr!(output, i, opcode, self),
+                OpCode::Closure => const_instr!(output, i, opcode, self),
             }
 
             num += 1;

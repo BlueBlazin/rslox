@@ -2,7 +2,7 @@ use crate::chunk::Chunk;
 use crate::codegen::Codegen;
 use crate::error::{LoxError, Result};
 use crate::gc::Heap;
-use crate::object::{ObjClosure, ObjFunction, ObjString};
+use crate::object::{ObjClosure, ObjString};
 use crate::opcodes::OpCode;
 use crate::scanner::Scanner;
 use crate::token::{Token, TokenType};
@@ -24,7 +24,7 @@ enum FunctionType {
 
 pub struct Compiler<'a> {
     scanner: Peekable<Scanner<'a>>,
-    pub function: ObjFunction,
+    pub function: ObjClosure,
     fun_type: FunctionType,
     locals: Vec<Local>,
     scope_depth: isize,
@@ -35,10 +35,11 @@ pub struct Compiler<'a> {
 impl<'a> Compiler<'a> {
     pub fn new(source: Chars<'a>, heap: Heap<Value>) -> Self {
         // NOTE: I don't think we need to worry about GC here. Still, be mindful.
-        let function = ObjFunction {
+        let function = ObjClosure {
             arity: 0,
             chunk: Chunk::new(String::from("main")),
             name: None,
+            upvalues: vec![],
         };
 
         let mut locals = Vec::with_capacity(std::u8::MAX as usize + 1);
@@ -129,7 +130,7 @@ impl<'a> Compiler<'a> {
 
         let handle = self.heap.insert(Value::Closure(closure_obj));
 
-        self.emit_const(handle)
+        self.emit_closure(handle)
     }
 
     fn parse_parameters(&mut self) -> Result<()> {
@@ -697,10 +698,11 @@ impl<'a> Compiler<'a> {
 
         let old_function = mem::replace(
             &mut self.function,
-            ObjFunction {
+            ObjClosure {
                 arity: 0,
                 chunk: Chunk::new(String::from("TODO: remove me")),
                 name: Some(handle),
+                upvalues: vec![],
             },
         );
 
@@ -712,14 +714,7 @@ impl<'a> Compiler<'a> {
 
         self.emit_return();
 
-        let compiled_function = mem::replace(&mut self.function, old_function);
-
-        let handle = self.heap.insert(Value::Fun(compiled_function));
-
-        Ok(ObjClosure {
-            function: handle,
-            upvalues: vec![],
-        })
+        Ok(mem::replace(&mut self.function, old_function))
     }
 
     fn peek(&mut self) -> Option<&TokenType> {
@@ -760,6 +755,12 @@ impl<'a> Codegen for Compiler<'a> {
     fn emit_const(&mut self, handle: ValueHandle) -> Result<()> {
         let const_idx = self.chunk().add_constant(handle)?;
         self.emit_bytes(OpCode::Constant as u8, const_idx);
+        Ok(())
+    }
+
+    fn emit_closure(&mut self, handle: ValueHandle) -> Result<()> {
+        let const_idx = self.chunk().add_constant(handle)?;
+        self.emit_bytes(OpCode::Closure as u8, const_idx);
         Ok(())
     }
 

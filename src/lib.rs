@@ -18,8 +18,6 @@ mod tests {
     #[test]
     fn test_sandbox() {
         use crate::gc::Heap;
-        use crate::object::ObjClosure;
-        use crate::value::Value;
 
         let source = r#"
         fun fib(n) {
@@ -41,13 +39,7 @@ mod tests {
 
         println!("{:?}", compiler.chunk());
 
-        let handle = compiler.heap.insert(Value::Fun(compiler.function));
-
         let mut vm = vm::Vm::new(compiler.heap);
-        vm.interpret(ObjClosure {
-            function: handle,
-            upvalues: vec![],
-        })
-        .unwrap();
+        vm.interpret(compiler.function).unwrap();
     }
 }

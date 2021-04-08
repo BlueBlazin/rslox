@@ -14,15 +14,24 @@ pub struct ObjString {
 
 #[derive(Debug, Clone)]
 pub struct ObjClosure {
-    // Lox ObjFunction
-    pub function: ValueHandle,
-    pub upvalues: Vec<ValueHandle>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ObjFunction {
     pub arity: usize,
     pub chunk: Chunk,
     // Lox String
     pub name: Option<ValueHandle>,
+    pub upvalues: Vec<ValueHandle>,
 }
+
+// #[derive(Debug, Clone)]
+// pub struct ObjClosure {
+//     // Lox ObjFunction
+//     pub function: ValueHandle,
+//     pub upvalues: Vec<ValueHandle>,
+// }
+
+// #[derive(Debug, Clone)]
+// pub struct ObjFunction {
+//     pub arity: usize,
+//     pub chunk: Chunk,
+//     // Lox String
+//     pub name: Option<ValueHandle>,
+// }

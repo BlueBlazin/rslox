@@ -217,6 +217,11 @@ impl Vm {
 
                     self.call_value(handle, arg_count)?;
                 }
+                OpCode::Closure => {
+                    let handle = self.fetch_const();
+
+                    self.push(handle)?
+                }
             };
         }
 
@@ -351,7 +356,7 @@ impl Vm {
         let handle = self.current_frame().closure;
 
         match self.get_value(handle) {
-            Ok(Value::Fun(f)) => Ok(&f.chunk),
+            Ok(Value::Closure(f)) => Ok(&f.chunk),
             _ => Err(LoxError::RuntimeError),
         }
     }
