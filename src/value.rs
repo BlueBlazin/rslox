@@ -1,11 +1,11 @@
 use crate::gc::Handle;
-use crate::object::LoxObj;
-
-// tmp
+use crate::object::{ObjClosure, ObjFunction, ObjString};
 
 #[derive(Debug, Clone)]
 pub enum Value {
-    Obj(LoxObj),
+    Str(ObjString),
+    Closure(ObjClosure),
+    Fun(ObjFunction),
     Bool(bool),
     Number(f64),
     Nil,

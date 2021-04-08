@@ -2,7 +2,7 @@ use crate::chunk::Chunk;
 use crate::codegen::Codegen;
 use crate::error::{LoxError, Result};
 use crate::gc::Heap;
-use crate::object::{LoxObj, ObjFunction, ObjString};
+use crate::object::{ObjClosure, ObjFunction, ObjString};
 use crate::opcodes::OpCode;
 use crate::scanner::Scanner;
 use crate::token::{Token, TokenType};
@@ -60,7 +60,7 @@ impl<'a> Compiler<'a> {
     }
 
     // pub fn from_scanner(scanner: Peekable<Scanner<'a>>, heap: Heap<Value>) -> Self {
-    //     let function = ObjFunction {
+    //     let function = ObjClosure {
     //         arity: 0,
     //         chunk: Chunk::new(String::from("main")),
     //         name: None,
@@ -119,7 +119,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn function(&mut self, name: String) -> Result<()> {
-        let function_obj = self.with_function_ctx(name, &mut |this| {
+        let closure_obj = self.with_function_ctx(name, &mut |this| {
             this.begin_scope();
 
             this.parse_parameters()?;
@@ -127,7 +127,7 @@ impl<'a> Compiler<'a> {
             this.block()
         })?;
 
-        let handle = self.heap.insert(Value::Obj(LoxObj::Fun(function_obj)));
+        let handle = self.heap.insert(Value::Closure(closure_obj));
 
         self.emit_const(handle)
     }
@@ -677,7 +677,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn with_function_ctx<T>(&mut self, name: String, compile_fn: &mut T) -> Result<ObjFunction>
+    fn with_function_ctx<T>(&mut self, name: String, compile_fn: &mut T) -> Result<ObjClosure>
     where
         T: FnMut(&mut Self) -> Result<()>,
     {
@@ -714,7 +714,12 @@ impl<'a> Compiler<'a> {
 
         let compiled_function = mem::replace(&mut self.function, old_function);
 
-        Ok(compiled_function)
+        let handle = self.heap.insert(Value::Fun(compiled_function));
+
+        Ok(ObjClosure {
+            function: handle,
+            upvalues: vec![],
+        })
     }
 
     fn peek(&mut self) -> Option<&TokenType> {
@@ -737,9 +742,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn make_string(&mut self, value: String) -> Result<ValueHandle> {
-        Ok(self
-            .heap
-            .insert(Value::Obj(LoxObj::Str(ObjString { value }))))
+        Ok(self.heap.insert(Value::Str(ObjString { value })))
     }
 
     fn emit_return(&mut self) {

@@ -50,8 +50,8 @@ impl<T> Heap<T> {
         }
     }
 
-    pub fn insert(&mut self, object: T) -> Handle<T> {
-        let ptr = Box::into_raw(Box::new(object));
+    pub fn insert(&mut self, value: T) -> Handle<T> {
+        let ptr = Box::into_raw(Box::new(value));
 
         let handle = Handle { ptr };
 

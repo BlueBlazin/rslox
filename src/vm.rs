@@ -1,7 +1,7 @@
 use crate::chunk::Chunk;
 use crate::error::{Internal, LoxError, Result};
 use crate::gc::Heap;
-use crate::object::{LoxObj, ObjFunction, ObjString};
+use crate::object::{ObjClosure, ObjString};
 use crate::opcodes::OpCode;
 use crate::value::{Value, ValueHandle};
 use std::collections::HashMap;
@@ -26,7 +26,7 @@ macro_rules! binary_op {
 }
 
 pub struct CallFrame {
-    pub function: ValueHandle,
+    pub closure: ValueHandle,
     pub ip: usize,
     pub fp: usize,
 }
@@ -50,8 +50,8 @@ impl Vm {
         }
     }
 
-    pub fn interpret(&mut self, function: ObjFunction) -> Result<()> {
-        let handle = self.alloc(Value::Obj(LoxObj::Fun(function)));
+    pub fn interpret(&mut self, function: ObjClosure) -> Result<()> {
+        let handle = self.alloc(Value::Closure(function));
 
         self.push(handle)?;
 
@@ -95,11 +95,11 @@ impl Vm {
 
                             self.push_value(Value::Number(sum))?;
                         }
-                        (Value::Obj(LoxObj::Str(a)), Value::Obj(LoxObj::Str(b))) => {
+                        (Value::Str(a), Value::Str(b)) => {
                             let mut value = String::from(&a.value);
                             value.push_str(&b.value);
 
-                            self.push_value(Value::Obj(LoxObj::Str(ObjString { value })))?;
+                            self.push_value(Value::Str(ObjString { value }))?;
                         }
                         _ => return Err(LoxError::InvalidTypeForAddition),
                     }
@@ -135,7 +135,7 @@ impl Vm {
                             let cmp = a == b;
                             self.push_value(Value::Bool(cmp))?;
                         }
-                        (Value::Obj(LoxObj::Str(a)), Value::Obj(LoxObj::Str(b))) => {
+                        (Value::Str(a), Value::Str(b)) => {
                             let cmp = a.value == b.value;
                             self.push_value(Value::Bool(cmp))?;
                         }
@@ -225,9 +225,9 @@ impl Vm {
 
     fn call_value(&mut self, handle: ValueHandle, arg_count: usize) -> Result<()> {
         match self.get_value(handle)? {
-            Value::Obj(LoxObj::Fun(_)) => {
+            Value::Closure(_) => {
                 self.frames.push(CallFrame {
-                    function: handle,
+                    closure: handle,
                     ip: 0,
                     fp: self.sp - 1 - arg_count,
                 });
@@ -242,7 +242,7 @@ impl Vm {
         let handle = self.fetch_const();
 
         match self.get_value(handle)? {
-            Value::Obj(LoxObj::Str(ObjString { value })) => Ok(value.clone()),
+            Value::Str(ObjString { value }) => Ok(value.clone()),
             value => Err(LoxError::UnexpectedValue(value.clone())),
         }
     }
@@ -348,10 +348,10 @@ impl Vm {
 
     #[inline]
     fn chunk(&mut self) -> Result<&Chunk> {
-        let handle = self.current_frame().function;
+        let handle = self.current_frame().closure;
 
-        match self.get_value(handle)? {
-            Value::Obj(LoxObj::Fun(f)) => Ok(&f.chunk),
+        match self.get_value(handle) {
+            Ok(Value::Fun(f)) => Ok(&f.chunk),
             _ => Err(LoxError::RuntimeError),
         }
     }
