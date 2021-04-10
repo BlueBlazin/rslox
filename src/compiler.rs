@@ -22,9 +22,15 @@ enum FunctionType {
     Script,
 }
 
+#[derive(Clone)]
 struct Upvalue {
     is_local: bool,
     index: u8,
+}
+
+enum UpvaluesKind {
+    Current,
+    Past(usize),
 }
 
 pub struct Compiler<'a> {
@@ -35,9 +41,9 @@ pub struct Compiler<'a> {
     scope_depth: isize,
     pub line: usize,
     pub heap: Heap<Value>,
-    locals_stack: Vec<Vec<Local>>,
-    function_stack: Vec<ObjClosure>,
     upvalues: Vec<Upvalue>,
+    locals_stack: Vec<Vec<Local>>,
+    upvalues_stack: Vec<Vec<Upvalue>>,
 }
 
 impl<'a> Compiler<'a> {
@@ -65,9 +71,9 @@ impl<'a> Compiler<'a> {
             scope_depth: 0,
             line: 0,
             heap,
-            locals_stack: vec![],
-            function_stack: vec![],
             upvalues: Vec::with_capacity(u8::MAX as usize),
+            locals_stack: vec![],
+            upvalues_stack: vec![],
         }
     }
 
@@ -143,7 +149,9 @@ impl<'a> Compiler<'a> {
 
         self.emit_closure(handle)?;
 
-        for Upvalue { is_local, index } in self.upvalues {
+        let upvalues = mem::replace(&mut self.upvalues, vec![]);
+
+        for Upvalue { is_local, index } in upvalues {
             self.emit_byte(is_local as u8);
             self.emit_byte(index);
         }
@@ -308,6 +316,7 @@ impl<'a> Compiler<'a> {
         self.expect(TokenType::Print)?;
         self.expression()?;
         self.expect(TokenType::Semicolon)?;
+
         self.emit_byte(OpCode::Print as u8);
         Ok(())
     }
@@ -418,6 +427,7 @@ impl<'a> Compiler<'a> {
             }
             _ => {
                 self.expression()?;
+
                 self.emit_byte(OpCode::Return as u8);
             }
         }
@@ -429,6 +439,7 @@ impl<'a> Compiler<'a> {
         dbg!("expr_statement");
         self.expression()?;
         self.expect(TokenType::Semicolon)?;
+
         self.emit_byte(OpCode::Pop as u8);
         Ok(())
     }
@@ -511,6 +522,7 @@ impl<'a> Compiler<'a> {
         match self.advance()? {
             Some(TokenType::Num(n)) => {
                 let handle = self.heap.insert(Value::Number(n));
+
                 self.emit_const(handle)?;
                 Ok(())
             }
@@ -574,6 +586,7 @@ impl<'a> Compiler<'a> {
                     Some(TokenType::Equal) if can_assign => {
                         self.advance()?;
                         self.expression()?;
+
                         self.emit_bytes(set_op as u8, arg);
                     }
                     _ => self.emit_bytes(get_op as u8, arg),
@@ -589,7 +602,7 @@ impl<'a> Compiler<'a> {
         self.resolve_local_with(name, &self.locals)
     }
 
-    fn resolve_local_with(&mut self, name: &str, locals: &Vec<Local>) -> Result<Option<u8>> {
+    fn resolve_local_with(&self, name: &str, locals: &Vec<Local>) -> Result<Option<u8>> {
         for (idx, local) in locals.iter().enumerate().rev() {
             if &local.name == name {
                 if local.depth == -1 {
@@ -603,15 +616,25 @@ impl<'a> Compiler<'a> {
         Ok(None)
     }
 
-    fn add_upvalue(&mut self, function: &ObjClosure, index: u8, is_local: bool) -> Result<u8> {
-        for upvalue in self.upvalues {
+    fn add_upvalue(
+        &mut self,
+        upvalues_kind: UpvaluesKind,
+        index: u8,
+        is_local: bool,
+    ) -> Result<u8> {
+        let upvalues = match upvalues_kind {
+            UpvaluesKind::Current => &mut self.upvalues,
+            UpvaluesKind::Past(i) => &mut self.upvalues_stack[i],
+        };
+
+        for upvalue in upvalues.iter() {
             if (upvalue.index == index) && (upvalue.is_local == is_local) {
                 return Ok(index);
             }
         }
 
-        let ret_value = self.upvalues.len() as u8;
-        self.upvalues.push(Upvalue { index, is_local });
+        let ret_value = upvalues.len() as u8;
+        upvalues.push(Upvalue { index, is_local });
 
         Ok(ret_value)
     }
@@ -619,7 +642,8 @@ impl<'a> Compiler<'a> {
     // We implement a poor man's recursion with an explicit pointer and loop.
     fn resolve_upvalue(&mut self, name: &str) -> Result<Option<u8>> {
         let mut i = self.locals_stack.len() - 1;
-        let mut function = &self.function;
+        // let mut upvalues = &mut self.upvalues;
+        let mut upvalues_kind = UpvaluesKind::Current;
 
         loop {
             // If we reach the bottom and don't find a matching local that means
@@ -632,19 +656,21 @@ impl<'a> Compiler<'a> {
             // The rest will add upvalues all the way to the top as we unwind.
             if let Some(idx) = self.resolve_local_with(name, &self.locals_stack[i])? {
                 // add local (???)
-                let mut index = self.add_upvalue(function, idx, true)?;
+                let mut index = self.add_upvalue(upvalues_kind, idx, true)?;
 
                 // unwind
                 while i < self.locals_stack.len() {
-                    function = &self.function_stack[i];
-                    index = self.add_upvalue(function, index, false)?;
+                    // upvalues = &mut self.upvalues_stack[i];
+                    upvalues_kind = UpvaluesKind::Past(i as usize);
+                    index = self.add_upvalue(upvalues_kind, index, false)?;
                     i += 1;
                 }
 
                 return Ok(Some(index));
             }
 
-            function = &self.function_stack[i];
+            // upvalues = &mut self.upvalues_stack[i];
+            upvalues_kind = UpvaluesKind::Past(i as usize);
             i -= 1;
         }
     }
@@ -762,7 +788,15 @@ impl<'a> Compiler<'a> {
 
         let old_fun_type = mem::replace(&mut self.fun_type, FunctionType::Function);
 
-        let old_upvalues = mem::replace(&mut self.upvalues, vec![]);
+        let old_function = mem::replace(
+            &mut self.function,
+            ObjClosure {
+                arity: 0,
+                chunk: Chunk::new(String::from("TODO: remove me")),
+                name: Some(handle),
+                upvalues: vec![],
+            },
+        );
 
         self.locals_stack.push(mem::replace(
             &mut self.locals,
@@ -772,29 +806,29 @@ impl<'a> Compiler<'a> {
             }],
         ));
 
-        self.function_stack.push(mem::replace(
-            &mut self.function,
-            ObjClosure {
-                arity: 0,
-                chunk: Chunk::new(String::from("TODO: remove me")),
-                name: Some(handle),
-                upvalues: vec![],
-            },
-        ));
+        // self.function_stack.push(mem::replace(
+        //     &mut self.function,
+        //     ObjClosure {
+        //         arity: 0,
+        //         chunk: Chunk::new(String::from("TODO: remove me")),
+        //         name: Some(handle),
+        //         upvalues: vec![],
+        //     },
+        // ));
+
+        self.upvalues_stack
+            .push(mem::replace(&mut self.upvalues, vec![]));
 
         compile_fn(self)?;
 
         self.scope_depth = old_scope_depth;
         self.locals = self.locals_stack.pop().unwrap();
         self.fun_type = old_fun_type;
-        self.upvalues = old_upvalues;
+        self.upvalues = self.upvalues_stack.pop().unwrap();
 
         self.emit_return();
 
-        Ok(mem::replace(
-            &mut self.function,
-            self.function_stack.pop().unwrap(),
-        ))
+        Ok(mem::replace(&mut self.function, old_function))
     }
 
     fn peek(&mut self) -> Option<&TokenType> {
@@ -826,7 +860,51 @@ impl<'a> Compiler<'a> {
     }
 }
 
+// impl Codegen for Chunk {
+//     #[inline]
+//     fn emit_byte(&mut self, value: u8, line: usize) {
+//         // let line = self.line;
+//         self.write(value, line);
+//     }
+
+//     fn emit_const(&mut self, handle: ValueHandle, line: usize) -> Result<()> {
+//         let const_idx = self.add_constant(handle)?;
+//         self.emit_bytes(OpCode::Constant as u8, const_idx, line);
+//         Ok(())
+//     }
+
+//     fn emit_closure(&mut self, handle: ValueHandle, line: usize) -> Result<()> {
+//         let const_idx = self.add_constant(handle)?;
+//         self.emit_bytes(OpCode::Closure as u8, const_idx, line);
+//         Ok(())
+//     }
+
+//     fn emit_jump(&mut self, value: u8, line: usize) -> usize {
+//         self.emit_byte(value, line);
+//         self.emit_byte(0xFF, line);
+//         self.emit_byte(0xFF, line);
+
+//         self.code.len() - 2
+//     }
+
+//     fn emit_loop(&mut self, loop_start: usize, line: usize) -> Result<()> {
+//         self.emit_byte(OpCode::Loop as u8, line);
+
+//         let offset = self.code.len() - loop_start + 2;
+
+//         if offset > std::u16::MAX as usize {
+//             return Err(LoxError::CompileError);
+//         }
+
+//         self.emit_byte(((offset >> 8) & 0xFF) as u8, line);
+//         self.emit_byte((offset & 0xFF) as u8, line);
+
+//         Ok(())
+//     }
+// }
+
 impl<'a> Codegen for Compiler<'a> {
+    #[inline]
     fn emit_byte(&mut self, value: u8) {
         let line = self.line;
         self.chunk().write(value, line);

@@ -222,6 +222,7 @@ impl Vm {
 
                     self.push(handle)?
                 }
+                _ => unimplemented!(),
             };
         }
 
