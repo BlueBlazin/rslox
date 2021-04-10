@@ -22,6 +22,11 @@ enum FunctionType {
     Script,
 }
 
+struct Upvalue {
+    is_local: bool,
+    index: u8,
+}
+
 pub struct Compiler<'a> {
     scanner: Peekable<Scanner<'a>>,
     pub function: ObjClosure,
@@ -30,6 +35,9 @@ pub struct Compiler<'a> {
     scope_depth: isize,
     pub line: usize,
     pub heap: Heap<Value>,
+    locals_stack: Vec<Vec<Local>>,
+    function_stack: Vec<ObjClosure>,
+    upvalues: Vec<Upvalue>,
 }
 
 impl<'a> Compiler<'a> {
@@ -57,6 +65,9 @@ impl<'a> Compiler<'a> {
             scope_depth: 0,
             line: 0,
             heap,
+            locals_stack: vec![],
+            function_stack: vec![],
+            upvalues: Vec::with_capacity(u8::MAX as usize),
         }
     }
 
@@ -130,7 +141,14 @@ impl<'a> Compiler<'a> {
 
         let handle = self.heap.insert(Value::Closure(closure_obj));
 
-        self.emit_closure(handle)
+        self.emit_closure(handle)?;
+
+        for Upvalue { is_local, index } in self.upvalues {
+            self.emit_byte(is_local as u8);
+            self.emit_byte(index);
+        }
+
+        Ok(())
     }
 
     fn parse_parameters(&mut self) -> Result<()> {
@@ -532,19 +550,25 @@ impl<'a> Compiler<'a> {
         dbg!("named_variable");
         match name {
             TokenType::Ident(value) => {
-                // let arg = self.chunk().add_constant(Const::Str(s))?;
-                let (arg, get_op, set_op) = match self.resolve_local(&value)? {
-                    Some(idx) => (idx, OpCode::GetLocal, OpCode::SetLocal),
-                    None => {
-                        let handle = self.make_string(value)?;
+                let arg;
+                let get_op;
+                let set_op;
 
-                        (
-                            self.chunk().add_constant(handle)?,
-                            OpCode::GetGlobal,
-                            OpCode::SetGlobal,
-                        )
-                    }
-                };
+                if let Some(idx) = self.resolve_local(&value)? {
+                    arg = idx;
+                    get_op = OpCode::GetLocal;
+                    set_op = OpCode::SetLocal;
+                } else if let Some(idx) = self.resolve_upvalue(&value)? {
+                    arg = idx;
+                    get_op = OpCode::GetUpvalue;
+                    set_op = OpCode::SetUpvalue;
+                } else {
+                    let handle = self.make_string(value)?;
+
+                    arg = self.chunk().add_constant(handle)?;
+                    get_op = OpCode::GetGlobal;
+                    set_op = OpCode::SetGlobal;
+                }
 
                 match self.peek() {
                     Some(TokenType::Equal) if can_assign => {
@@ -562,7 +586,11 @@ impl<'a> Compiler<'a> {
     }
 
     fn resolve_local(&mut self, name: &str) -> Result<Option<u8>> {
-        for (idx, local) in self.locals.iter().enumerate().rev() {
+        self.resolve_local_with(name, &self.locals)
+    }
+
+    fn resolve_local_with(&mut self, name: &str, locals: &Vec<Local>) -> Result<Option<u8>> {
+        for (idx, local) in locals.iter().enumerate().rev() {
             if &local.name == name {
                 if local.depth == -1 {
                     return Err(LoxError::CompileError);
@@ -573,6 +601,52 @@ impl<'a> Compiler<'a> {
         }
 
         Ok(None)
+    }
+
+    fn add_upvalue(&mut self, function: &ObjClosure, index: u8, is_local: bool) -> Result<u8> {
+        for upvalue in self.upvalues {
+            if (upvalue.index == index) && (upvalue.is_local == is_local) {
+                return Ok(index);
+            }
+        }
+
+        let ret_value = self.upvalues.len() as u8;
+        self.upvalues.push(Upvalue { index, is_local });
+
+        Ok(ret_value)
+    }
+
+    // We implement a poor man's recursion with an explicit pointer and loop.
+    fn resolve_upvalue(&mut self, name: &str) -> Result<Option<u8>> {
+        let mut i = self.locals_stack.len() - 1;
+        let mut function = &self.function;
+
+        loop {
+            // If we reach the bottom and don't find a matching local that means
+            // it doesn't exist. So we just return None right away.
+            if i == 0 {
+                return Ok(None);
+            }
+
+            // If we find the local in some functions enclosing locals array, then it adds a local.
+            // The rest will add upvalues all the way to the top as we unwind.
+            if let Some(idx) = self.resolve_local_with(name, &self.locals_stack[i])? {
+                // add local (???)
+                let mut index = self.add_upvalue(function, idx, true)?;
+
+                // unwind
+                while i < self.locals_stack.len() {
+                    function = &self.function_stack[i];
+                    index = self.add_upvalue(function, index, false)?;
+                    i += 1;
+                }
+
+                return Ok(Some(index));
+            }
+
+            function = &self.function_stack[i];
+            i -= 1;
+        }
     }
 
     fn and(&mut self) -> Result<()> {
@@ -688,15 +762,17 @@ impl<'a> Compiler<'a> {
 
         let old_fun_type = mem::replace(&mut self.fun_type, FunctionType::Function);
 
-        let old_locals = mem::replace(
+        let old_upvalues = mem::replace(&mut self.upvalues, vec![]);
+
+        self.locals_stack.push(mem::replace(
             &mut self.locals,
             vec![Local {
                 depth: 0,
                 name: String::from(""),
             }],
-        );
+        ));
 
-        let old_function = mem::replace(
+        self.function_stack.push(mem::replace(
             &mut self.function,
             ObjClosure {
                 arity: 0,
@@ -704,17 +780,21 @@ impl<'a> Compiler<'a> {
                 name: Some(handle),
                 upvalues: vec![],
             },
-        );
+        ));
 
         compile_fn(self)?;
 
         self.scope_depth = old_scope_depth;
-        self.locals = old_locals;
+        self.locals = self.locals_stack.pop().unwrap();
         self.fun_type = old_fun_type;
+        self.upvalues = old_upvalues;
 
         self.emit_return();
 
-        Ok(mem::replace(&mut self.function, old_function))
+        Ok(mem::replace(
+            &mut self.function,
+            self.function_stack.pop().unwrap(),
+        ))
     }
 
     fn peek(&mut self) -> Option<&TokenType> {
