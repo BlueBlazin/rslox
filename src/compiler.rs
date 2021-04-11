@@ -91,6 +91,7 @@ impl<'a> Compiler<'a> {
     }
 
     pub fn declaration(&mut self) -> Result<()> {
+        dbg!("declaration");
         match self.peek() {
             Some(TokenType::Var) => self.var_declaration(),
             Some(TokenType::Fun) => self.fun_declaration(),
@@ -99,6 +100,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn fun_declaration(&mut self) -> Result<()> {
+        dbg!("fun_declaration");
         self.expect(TokenType::Fun)?;
 
         let (global, name) = self.parse_function_name()?;
@@ -113,6 +115,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn function(&mut self, name: String) -> Result<()> {
+        dbg!("function");
         let mut closure_obj = self.with_function_ctx(name, &mut |this| {
             this.begin_scope();
 
@@ -138,6 +141,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn parse_parameters(&mut self) -> Result<()> {
+        dbg!("parse_parameters");
         self.expect(TokenType::LParen)?;
 
         loop {
@@ -300,6 +304,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn block(&mut self) -> Result<()> {
+        dbg!("block");
         self.expect(TokenType::LBrace)?;
 
         loop {
@@ -621,6 +626,10 @@ impl<'a> Compiler<'a> {
 
     // We implement a poor man's recursion with an explicit pointer and loop.
     fn resolve_upvalue(&mut self, name: &str) -> Result<Option<u8>> {
+        if self.locals_stack.is_empty() {
+            return Ok(None);
+        }
+
         let mut i = self.locals_stack.len() - 1;
         // let mut upvalues = &mut self.upvalues;
         let mut upvalues_kind = UpvaluesKind::Current;
@@ -857,6 +866,7 @@ impl<'a> Codegen for Compiler<'a> {
     }
 
     fn emit_closure(&mut self, handle: ValueHandle) -> Result<()> {
+        dbg!("emit_closure");
         let const_idx = self.chunk().add_constant(handle)?;
         self.emit_bytes(OpCode::Closure as u8, const_idx);
         Ok(())

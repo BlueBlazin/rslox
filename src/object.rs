@@ -1,5 +1,6 @@
 use crate::chunk::Chunk;
 use crate::value::ValueHandle;
+use std::fmt;
 
 // #[derive(Debug, Clone)]
 // pub enum LoxObj {
@@ -7,12 +8,12 @@ use crate::value::ValueHandle;
 //     Fun(ObjFunction),
 // }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct ObjString {
     pub value: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct ObjClosure {
     pub arity: usize,
     pub chunk: Chunk,
@@ -22,7 +23,13 @@ pub struct ObjClosure {
     pub upvalue_count: usize,
 }
 
-#[derive(Debug, Clone)]
+// impl fmt::Debug for ObjClosure {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         write!(f, "ObjClosure {:?}", self.name.unwrap())
+//     }
+// }
+
+#[derive(Clone, Debug)]
 pub struct ObjUpvalue {
-    location: ValueHandle,
+    pub location: ValueHandle,
 }

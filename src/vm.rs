@@ -1,7 +1,7 @@
 use crate::chunk::Chunk;
 use crate::error::{Internal, LoxError, Result};
 use crate::gc::Heap;
-use crate::object::{ObjClosure, ObjString};
+use crate::object::{ObjClosure, ObjString, ObjUpvalue};
 use crate::opcodes::OpCode;
 use crate::value::{Value, ValueHandle};
 use std::collections::HashMap;
@@ -198,16 +198,16 @@ impl Vm {
                     let handle = self.peek()?;
 
                     if self.get_value(handle).unwrap().is_falsey() {
-                        self.current_frame().ip += offset;
+                        self.current_frame_mut().ip += offset;
                     }
                 }
                 OpCode::Jump => {
                     let offset = self.fetch16() as usize;
-                    self.current_frame().ip += offset;
+                    self.current_frame_mut().ip += offset;
                 }
                 OpCode::Loop => {
                     let offset = self.fetch16() as usize;
-                    self.current_frame().ip -= offset;
+                    self.current_frame_mut().ip -= offset;
                 }
                 OpCode::Call => {
                     let arg_count = self.fetch() as usize;
@@ -220,9 +220,52 @@ impl Vm {
                 OpCode::Closure => {
                     let handle = self.fetch_const();
 
-                    self.push(handle)?
+                    self.push(handle)?;
+
+                    let upvalue_count = match self.get_value(handle)? {
+                        Value::Closure(closure) => Ok(closure.upvalue_count),
+                        _ => Err(LoxError::RuntimeError),
+                    }?;
+
+                    for _ in 0..upvalue_count {
+                        let is_local = self.fetch() != 0;
+                        let index = self.fetch() as usize;
+
+                        if is_local {
+                            let fp = self.current_frame().fp;
+                            let location = self.stack[fp + index].unwrap();
+                            let handle = self.alloc(Value::Upvalue(ObjUpvalue { location }));
+                            match self.get_value_mut(handle)? {
+                                Value::Closure(closure) => {
+                                    closure.upvalues.push(handle);
+                                }
+                                _ => return Err(LoxError::RuntimeError),
+                            }
+                        } else {
+                            let upvalue_handle = self.current_closure()?.upvalues[index];
+
+                            match self.get_value_mut(handle)? {
+                                Value::Closure(closure) => {
+                                    closure.upvalues.push(upvalue_handle);
+                                }
+                                _ => return Err(LoxError::RuntimeError),
+                            }
+                        }
+                    }
                 }
-                _ => unimplemented!(),
+                OpCode::GetUpvalue => {
+                    let idx = self.fetch() as usize;
+                    self.push(self.current_closure()?.upvalues[idx])?;
+                }
+                OpCode::SetUpvalue => {
+                    let idx = self.fetch() as usize;
+                    let value_handle = self.peek()?;
+                    let value = self.get_value(value_handle)?.clone();
+                    let mut location = self.current_closure()?.upvalues[idx];
+
+                    // *self.get_value_mut(location)? = value_handle;
+                    self.heap.set(&mut location, value);
+                }
             };
         }
 
@@ -260,14 +303,28 @@ impl Vm {
     }
 
     #[inline]
-    fn current_frame(&mut self) -> &mut CallFrame {
+    fn current_frame(&self) -> &CallFrame {
+        let last = self.frames.len() - 1;
+        &self.frames[last]
+    }
+
+    #[inline]
+    fn current_frame_mut(&mut self) -> &mut CallFrame {
         let last = self.frames.len() - 1;
         &mut self.frames[last]
     }
 
+    fn current_closure(&self) -> Result<&ObjClosure> {
+        let handle = self.current_frame().closure;
+        match self.get_value(handle)? {
+            Value::Closure(closure) => Ok(closure),
+            _ => Err(LoxError::RuntimeError),
+        }
+    }
+
     #[inline]
     fn fetch_opcode(&mut self) -> Option<&u8> {
-        let frame = self.current_frame();
+        let frame = self.current_frame_mut();
         let ip = frame.ip;
 
         frame.ip += 1;
@@ -277,7 +334,7 @@ impl Vm {
 
     #[inline]
     fn fetch(&mut self) -> u8 {
-        let frame = self.current_frame();
+        let frame = self.current_frame_mut();
         let ip = frame.ip;
 
         frame.ip += 1;

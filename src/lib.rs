@@ -20,15 +20,11 @@ mod tests {
         use crate::gc::Heap;
 
         let source = r#"
-        fun fib(n) {
-            if (n < 2) {
-                return n;
-            }
-
-            return fib(n - 1) + fib(n - 2);
+        fun foo() {
+            print 0;
         }
 
-        print fib(8);
+        foo();
         "#;
 
         let heap = Heap::new();
@@ -37,9 +33,9 @@ mod tests {
 
         compiler.parse().unwrap();
 
-        println!("{:?}", compiler.chunk());
+        println!("{:?}", compiler.chunk().constants);
 
-        let mut vm = vm::Vm::new(compiler.heap);
-        vm.interpret(compiler.function).unwrap();
+        // let mut vm = vm::Vm::new(compiler.heap);
+        // vm.interpret(compiler.function).unwrap();
     }
 }

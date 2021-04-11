@@ -2,34 +2,40 @@
 // Code is closely adapted from https://github.com/zesterer/broom
 
 use std::collections::HashSet;
+use std::fmt;
 use std::hash::{Hash, Hasher};
 
 //****************************************************************************
 // Handle
 //****************************************************************************
 
-#[derive(Debug)]
-pub struct Handle<T> {
+pub struct Handle<T: fmt::Debug> {
     pub ptr: *mut T,
 }
 
-impl<T> Handle<T> {}
+impl<T: fmt::Debug> fmt::Debug for Handle<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        unsafe { write!(f, "{:?}", &*self.ptr) }
+    }
+}
 
-impl<T> Copy for Handle<T> {}
-impl<T> Clone for Handle<T> {
+impl<T: fmt::Debug> Handle<T> {}
+
+impl<T: fmt::Debug> Copy for Handle<T> {}
+impl<T: fmt::Debug> Clone for Handle<T> {
     fn clone(&self) -> Self {
         Self { ptr: self.ptr }
     }
 }
 
-impl<T> PartialEq<Self> for Handle<T> {
+impl<T: fmt::Debug> PartialEq<Self> for Handle<T> {
     fn eq(&self, other: &Self) -> bool {
         self.ptr == other.ptr
     }
 }
-impl<T> Eq for Handle<T> {}
+impl<T: fmt::Debug> Eq for Handle<T> {}
 
-impl<T> Hash for Handle<T> {
+impl<T: fmt::Debug> Hash for Handle<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.ptr.hash(state);
     }
@@ -39,11 +45,11 @@ impl<T> Hash for Handle<T> {
 // Heap
 //****************************************************************************
 
-pub struct Heap<T> {
+pub struct Heap<T: fmt::Debug> {
     pub objects: HashSet<Handle<T>>,
 }
 
-impl<T> Heap<T> {
+impl<T: fmt::Debug> Heap<T> {
     pub fn new() -> Self {
         Self {
             objects: HashSet::new(),
@@ -80,13 +86,19 @@ impl<T> Heap<T> {
         }
     }
 
+    pub fn set(&mut self, handle: &mut Handle<T>, value: T) {
+        if self.contains(handle) {
+            handle.ptr = Box::into_raw(Box::new(value));
+        }
+    }
+
     pub fn remove(&mut self, handle: Handle<T>) {
         let res = self.objects.remove(&handle);
         debug_assert!(!res, "Attempted to remove handle not in heap.");
     }
 }
 
-impl<T> Drop for Heap<T> {
+impl<T: fmt::Debug> Drop for Heap<T> {
     fn drop(&mut self) {
         for handle in &self.objects {
             drop(unsafe { Box::from_raw(handle.ptr) });
