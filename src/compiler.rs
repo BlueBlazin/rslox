@@ -54,6 +54,7 @@ impl<'a> Compiler<'a> {
             chunk: Chunk::new(String::from("main")),
             name: None,
             upvalues: vec![],
+            upvalue_count: 0,
         };
 
         let mut locals = Vec::with_capacity(std::u8::MAX as usize + 1);
@@ -76,31 +77,6 @@ impl<'a> Compiler<'a> {
             upvalues_stack: vec![],
         }
     }
-
-    // pub fn from_scanner(scanner: Peekable<Scanner<'a>>, heap: Heap<Value>) -> Self {
-    //     let function = ObjClosure {
-    //         arity: 0,
-    //         chunk: Chunk::new(String::from("main")),
-    //         name: None,
-    //     };
-
-    //     let mut locals = Vec::with_capacity(std::u8::MAX as usize + 1);
-
-    //     locals.push(Local {
-    //         name: String::from(""),
-    //         depth: 0,
-    //     });
-
-    //     Self {
-    //         scanner: Some(scanner),
-    //         function,
-    //         fun_type: FunctionType::Function,
-    //         locals,
-    //         scope_depth: 0,
-    //         line: 0,
-    //         heap: Some(heap),
-    //     }
-    // }
 
     pub fn compile(mut self) -> Result<()> {
         self.parse()
@@ -137,13 +113,15 @@ impl<'a> Compiler<'a> {
     }
 
     fn function(&mut self, name: String) -> Result<()> {
-        let closure_obj = self.with_function_ctx(name, &mut |this| {
+        let mut closure_obj = self.with_function_ctx(name, &mut |this| {
             this.begin_scope();
 
             this.parse_parameters()?;
 
             this.block()
         })?;
+
+        closure_obj.upvalue_count = self.upvalues.len();
 
         let handle = self.heap.insert(Value::Closure(closure_obj));
 
@@ -633,6 +611,8 @@ impl<'a> Compiler<'a> {
             }
         }
 
+        // TODO: add max upvalues limit
+
         let ret_value = upvalues.len() as u8;
         upvalues.push(Upvalue { index, is_local });
 
@@ -795,6 +775,7 @@ impl<'a> Compiler<'a> {
                 chunk: Chunk::new(String::from("TODO: remove me")),
                 name: Some(handle),
                 upvalues: vec![],
+                upvalue_count: 0,
             },
         );
 
@@ -820,6 +801,8 @@ impl<'a> Compiler<'a> {
             .push(mem::replace(&mut self.upvalues, vec![]));
 
         compile_fn(self)?;
+
+        // self.function.upvalue_count = self.upvalues.len();
 
         self.scope_depth = old_scope_depth;
         self.locals = self.locals_stack.pop().unwrap();
@@ -859,49 +842,6 @@ impl<'a> Compiler<'a> {
         self.emit_byte(OpCode::Return as u8);
     }
 }
-
-// impl Codegen for Chunk {
-//     #[inline]
-//     fn emit_byte(&mut self, value: u8, line: usize) {
-//         // let line = self.line;
-//         self.write(value, line);
-//     }
-
-//     fn emit_const(&mut self, handle: ValueHandle, line: usize) -> Result<()> {
-//         let const_idx = self.add_constant(handle)?;
-//         self.emit_bytes(OpCode::Constant as u8, const_idx, line);
-//         Ok(())
-//     }
-
-//     fn emit_closure(&mut self, handle: ValueHandle, line: usize) -> Result<()> {
-//         let const_idx = self.add_constant(handle)?;
-//         self.emit_bytes(OpCode::Closure as u8, const_idx, line);
-//         Ok(())
-//     }
-
-//     fn emit_jump(&mut self, value: u8, line: usize) -> usize {
-//         self.emit_byte(value, line);
-//         self.emit_byte(0xFF, line);
-//         self.emit_byte(0xFF, line);
-
-//         self.code.len() - 2
-//     }
-
-//     fn emit_loop(&mut self, loop_start: usize, line: usize) -> Result<()> {
-//         self.emit_byte(OpCode::Loop as u8, line);
-
-//         let offset = self.code.len() - loop_start + 2;
-
-//         if offset > std::u16::MAX as usize {
-//             return Err(LoxError::CompileError);
-//         }
-
-//         self.emit_byte(((offset >> 8) & 0xFF) as u8, line);
-//         self.emit_byte((offset & 0xFF) as u8, line);
-
-//         Ok(())
-//     }
-// }
 
 impl<'a> Codegen for Compiler<'a> {
     #[inline]
