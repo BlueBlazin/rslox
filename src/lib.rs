@@ -20,11 +20,22 @@ mod tests {
         use crate::gc::Heap;
 
         let source = r#"
-        fun foo() {
-            print 0;
+        var globalSet;
+        var globalGet;
+        
+        fun main() {
+            var a = "initial";
+        
+            fun set() { a = "updated"; }
+            fun get() { print a; }
+        
+            globalSet = set;
+            globalGet = get;
         }
 
-        foo();
+        main();
+        globalSet();
+        globalGet();
         "#;
 
         let heap = Heap::new();
@@ -33,9 +44,9 @@ mod tests {
 
         compiler.parse().unwrap();
 
-        println!("{:?}", compiler.chunk().constants);
+        println!("{:?}", compiler.chunk());
 
-        // let mut vm = vm::Vm::new(compiler.heap);
-        // vm.interpret(compiler.function).unwrap();
+        let mut vm = vm::Vm::new(compiler.heap);
+        vm.interpret(compiler.function).unwrap();
     }
 }

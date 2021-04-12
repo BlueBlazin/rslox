@@ -218,13 +218,15 @@ impl Vm {
                     self.call_value(handle, arg_count)?;
                 }
                 OpCode::Closure => {
-                    let handle = self.fetch_const();
+                    let closure_handle = self.fetch_const();
 
-                    self.push(handle)?;
+                    self.push(closure_handle)?;
 
-                    let upvalue_count = match self.get_value(handle)? {
+                    let upvalue_count = match self.get_value(closure_handle)? {
                         Value::Closure(closure) => Ok(closure.upvalue_count),
-                        _ => Err(LoxError::RuntimeError),
+                        _ => Err(LoxError::_TempDevError(
+                            "error in closure upvalue_count match",
+                        )),
                     }?;
 
                     for _ in 0..upvalue_count {
@@ -235,20 +237,28 @@ impl Vm {
                             let fp = self.current_frame().fp;
                             let location = self.stack[fp + index].unwrap();
                             let handle = self.alloc(Value::Upvalue(ObjUpvalue { location }));
-                            match self.get_value_mut(handle)? {
+                            match self.get_value_mut(closure_handle)? {
                                 Value::Closure(closure) => {
                                     closure.upvalues.push(handle);
                                 }
-                                _ => return Err(LoxError::RuntimeError),
+                                _ => {
+                                    return Err(LoxError::_TempDevError(
+                                        "error in closure if is_local",
+                                    ))
+                                }
                             }
                         } else {
                             let upvalue_handle = self.current_closure()?.upvalues[index];
 
-                            match self.get_value_mut(handle)? {
+                            match self.get_value_mut(closure_handle)? {
                                 Value::Closure(closure) => {
                                     closure.upvalues.push(upvalue_handle);
                                 }
-                                _ => return Err(LoxError::RuntimeError),
+                                _ => {
+                                    return Err(LoxError::_TempDevError(
+                                        "error in closure match get_value_mut",
+                                    ))
+                                }
                             }
                         }
                     }

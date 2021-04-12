@@ -22,7 +22,7 @@ enum FunctionType {
     Script,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Upvalue {
     is_local: bool,
     index: u8,
@@ -51,7 +51,8 @@ impl<'a> Compiler<'a> {
         // NOTE: I don't think we need to worry about GC here. Still, be mindful.
         let function = ObjClosure {
             arity: 0,
-            chunk: Chunk::new(String::from("main")),
+            // chunk: Chunk::new(String::from("main")),
+            chunk: Chunk::new(),
             name: None,
             upvalues: vec![],
             upvalue_count: 0,
@@ -130,7 +131,7 @@ impl<'a> Compiler<'a> {
 
         self.emit_closure(handle)?;
 
-        let upvalues = mem::replace(&mut self.upvalues, vec![]);
+        let upvalues = mem::replace(&mut self.upvalues, self.upvalues_stack.pop().unwrap());
 
         for Upvalue { is_local, index } in upvalues {
             self.emit_byte(is_local as u8);
@@ -174,6 +175,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn var_declaration(&mut self) -> Result<()> {
+        dbg!("var_declaration");
         self.expect(TokenType::Var)?;
 
         // const_idx is the location in the constants array
@@ -211,6 +213,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn parse_variable(&mut self) -> Result<u8> {
+        dbg!("parse_variable");
         match self.advance()? {
             Some(TokenType::Ident(id)) => {
                 self.declare_variable(id.clone())?;
@@ -258,6 +261,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn define_variable(&mut self, const_idx: u8) -> Result<()> {
+        dbg!("define_variable");
         if self.scope_depth <= 0 {
             self.emit_bytes(OpCode::DefineGlobal as u8, const_idx);
         } else {
@@ -618,10 +622,9 @@ impl<'a> Compiler<'a> {
 
         // TODO: add max upvalues limit
 
-        let ret_value = upvalues.len() as u8;
         upvalues.push(Upvalue { index, is_local });
 
-        Ok(ret_value)
+        Ok(upvalues.len() as u8 - 1)
     }
 
     // We implement a poor man's recursion with an explicit pointer and loop.
@@ -635,20 +638,14 @@ impl<'a> Compiler<'a> {
         let mut upvalues_kind = UpvaluesKind::Current;
 
         loop {
-            // If we reach the bottom and don't find a matching local that means
-            // it doesn't exist. So we just return None right away.
-            if i == 0 {
-                return Ok(None);
-            }
-
             // If we find the local in some functions enclosing locals array, then it adds a local.
             // The rest will add upvalues all the way to the top as we unwind.
             if let Some(idx) = self.resolve_local_with(name, &self.locals_stack[i])? {
-                // add local (???)
+                // add local
                 let mut index = self.add_upvalue(upvalues_kind, idx, true)?;
 
                 // unwind
-                while i < self.locals_stack.len() {
+                while i < self.locals_stack.len() - 1 {
                     // upvalues = &mut self.upvalues_stack[i];
                     upvalues_kind = UpvaluesKind::Past(i as usize);
                     index = self.add_upvalue(upvalues_kind, index, false)?;
@@ -658,7 +655,12 @@ impl<'a> Compiler<'a> {
                 return Ok(Some(index));
             }
 
-            // upvalues = &mut self.upvalues_stack[i];
+            // If we reach the bottom and don't find a matching local that means
+            // it doesn't exist. So we just return None right away.
+            if i == 0 {
+                return Ok(None);
+            }
+
             upvalues_kind = UpvaluesKind::Past(i as usize);
             i -= 1;
         }
@@ -781,7 +783,8 @@ impl<'a> Compiler<'a> {
             &mut self.function,
             ObjClosure {
                 arity: 0,
-                chunk: Chunk::new(String::from("TODO: remove me")),
+                // chunk: Chunk::new(String::from("TODO: remove me")),
+                chunk: Chunk::new(),
                 name: Some(handle),
                 upvalues: vec![],
                 upvalue_count: 0,
@@ -796,27 +799,17 @@ impl<'a> Compiler<'a> {
             }],
         ));
 
-        // self.function_stack.push(mem::replace(
-        //     &mut self.function,
-        //     ObjClosure {
-        //         arity: 0,
-        //         chunk: Chunk::new(String::from("TODO: remove me")),
-        //         name: Some(handle),
-        //         upvalues: vec![],
-        //     },
-        // ));
-
         self.upvalues_stack
             .push(mem::replace(&mut self.upvalues, vec![]));
 
         compile_fn(self)?;
 
-        // self.function.upvalue_count = self.upvalues.len();
-
         self.scope_depth = old_scope_depth;
         self.locals = self.locals_stack.pop().unwrap();
         self.fun_type = old_fun_type;
-        self.upvalues = self.upvalues_stack.pop().unwrap();
+
+        // self.upvalues = self.upvalues_stack.pop().unwrap();
+        // let upvalues = mem::replace(&mut self.upvalues, self.upvalues_stack.pop().unwrap());
 
         self.emit_return();
 

@@ -129,7 +129,8 @@ macro_rules! jump_instr {
 
 impl fmt::Debug for Chunk {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut output = format!("=== {} ===\n", self.name);
+        // let mut output = format!("=== {} ===\n", self.name);
+        let mut output = String::from("");
 
         let mut i = 0;
         let mut num = 0;
@@ -168,6 +169,8 @@ impl fmt::Debug for Chunk {
                     let constant = self.code[i + 1] as usize;
                     let handle = self.constants[constant];
 
+                    output.push_str(&format!("{:12} {:4} {:?}\n", opcode, constant, handle));
+
                     i += 2;
 
                     // Justification for unsafe: At this point we're debugging,
@@ -175,6 +178,8 @@ impl fmt::Debug for Chunk {
                     // than otherwise. The other, more important, reason is that without it
                     // we need a separate function which takes the heap as an argument.
                     let value = unsafe { &*handle.ptr };
+
+                    // output.push_str(&format!("{:?}\n", value));
 
                     match value {
                         Value::Closure(closure) => {
@@ -186,12 +191,13 @@ impl fmt::Debug for Chunk {
                                 i += 2;
 
                                 output.push_str(&format!(
-                                    "{:04}      |                     {} {}\n",
+                                    "{:04}    |                 {} {}\n",
                                     i - 2,
                                     is_local,
                                     index
                                 ));
                             }
+                            output.push_str(&format!("----End {:?}----\n", &closure.name.unwrap()));
                         }
                         _ => panic!("Unexpected type in debug. Expected Closure."),
                     }
@@ -203,6 +209,6 @@ impl fmt::Debug for Chunk {
             num += 1;
         }
 
-        write!(f, "{}", output)
+        write!(f, "{}", &output[..output.len() - 1])
     }
 }

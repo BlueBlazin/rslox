@@ -17,6 +17,7 @@ pub enum LoxError {
     InvalidTypeForEquals,
     ValueNotCallable,
     UnexpectedValue(Value),
+    _TempDevError(&'static str),
 }
 
 #[derive(Debug)]
