@@ -37,6 +37,8 @@ pub struct Vm {
     pub frames: Vec<CallFrame>,
     globals: HashMap<String, ValueHandle>,
     sp: usize,
+    // TODO: use a BTreeMap instead
+    open_upvalues: Vec<(usize, ValueHandle)>,
 }
 
 impl Vm {
@@ -47,6 +49,7 @@ impl Vm {
             frames: Vec::with_capacity(FRAMES_MAX),
             globals: HashMap::new(),
             sp: 0,
+            open_upvalues: Vec::with_capacity(8),
         }
     }
 
@@ -67,6 +70,8 @@ impl Vm {
                     let handle = self.pop()?;
 
                     let popped_frame = self.frames.pop().unwrap();
+
+                    self.close_upvalues(popped_frame.fp)?;
 
                     self.sp = popped_frame.fp;
 
@@ -268,8 +273,15 @@ impl Vm {
 
                     match self.get_value(upvalue_handle)? {
                         Value::Upvalue(upvalue) => {
-                            let handle =
-                                self.stack[upvalue.location].ok_or(LoxError::StackOverflow)?;
+                            let handle = match upvalue.handle {
+                                Some(handle) => handle,
+                                None => {
+                                    self.stack[upvalue.location].ok_or(LoxError::StackOverflow)?
+                                }
+                            };
+
+                            // let handle =
+                            //     self.stack[upvalue.location].ok_or(LoxError::StackOverflow)?;
 
                             self.push(handle)?;
                         }
@@ -281,14 +293,34 @@ impl Vm {
                     let handle = self.peek()?;
                     // let value = self.get_value(value_handle)?.clone();
 
-                    let upvalue_handle = self.current_closure()?.upvalues[idx];
+                    let upvalue_handle = &self.current_closure()?.upvalues[idx];
 
-                    let location = match self.get_value(upvalue_handle)? {
-                        Value::Upvalue(upvalue) => Ok(upvalue.location),
-                        _ => Err(LoxError::_TempDevError("set_upvalue")),
-                    }?;
+                    // let location = match self.get_value(upvalue_handle)? {
+                    //     Value::Upvalue(upvalue) => Ok(upvalue.location),
+                    //     _ => Err(LoxError::_TempDevError("set_upvalue")),
+                    // }?;
 
-                    self.stack[location] = Some(handle);
+                    // self.stack[location] = Some(handle);
+
+                    match self
+                        .heap
+                        .get_mut(upvalue_handle)
+                        .ok_or(LoxError::InternalError(Internal::InvalidHandle))?
+                    {
+                        Value::Upvalue(upvalue) => match upvalue.handle {
+                            Some(_) => {
+                                upvalue.handle = Some(handle);
+                            }
+                            None => {
+                                self.stack[upvalue.location] = Some(handle);
+                            }
+                        },
+                        _ => return Err(LoxError::_TempDevError("set_upvalue")),
+                    }
+                }
+                OpCode::CloseUpvalue => {
+                    self.close_upvalues(self.stack.len() - 1)?;
+                    self.pop()?;
                 }
             };
         }
@@ -296,11 +328,55 @@ impl Vm {
         return Ok(());
     }
 
+    fn close_upvalues(&mut self, last: usize) -> Result<()> {
+        while let Some((_, handle)) = self.open_upvalues.last() {
+            match self
+                .heap
+                .get_mut(handle)
+                .ok_or(LoxError::InternalError(Internal::InvalidHandle))?
+            {
+                Value::Upvalue(upvalue) => {
+                    let location = upvalue.location;
+
+                    if location < last {
+                        break;
+                    }
+
+                    let handle = self.stack[location].ok_or(LoxError::StackUnderflow)?;
+
+                    upvalue.handle = Some(handle);
+                    self.open_upvalues.pop();
+                }
+                _ => return Err(LoxError::_TempDevError("close_upvalues get_value_mut")),
+            }
+        }
+
+        Ok(())
+    }
+
     fn capture_upvalue(&mut self, index: usize) -> Handle<Value> {
         let location = self.current_frame().fp + index;
-        let handle = self.alloc(Value::Upvalue(ObjUpvalue { location }));
 
-        handle
+        match self
+            .open_upvalues
+            .binary_search_by_key(&location, |&(x, _)| x)
+        {
+            Ok(idx) => self
+                .open_upvalues
+                .get(idx)
+                .map(|(_, handle)| handle.clone())
+                .unwrap(),
+            Err(idx) => {
+                let handle = self.alloc(Value::Upvalue(ObjUpvalue {
+                    location,
+                    handle: None,
+                }));
+
+                self.open_upvalues.insert(idx, (location, handle.clone()));
+
+                handle
+            }
+        }
     }
 
     fn call_value(&mut self, handle: ValueHandle, arg_count: usize) -> Result<()> {

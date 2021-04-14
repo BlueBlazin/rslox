@@ -14,6 +14,7 @@ use std::str::Chars;
 struct Local {
     name: String,
     depth: isize,
+    is_captured: bool,
 }
 
 #[derive(PartialEq)]
@@ -63,6 +64,7 @@ impl<'a> Compiler<'a> {
         locals.push(Local {
             name: String::from(""),
             depth: 0,
+            is_captured: false,
         });
 
         Self {
@@ -255,7 +257,11 @@ impl<'a> Compiler<'a> {
             return Err(LoxError::TooManyLocalVariables);
         }
 
-        self.locals.push(Local { name, depth: -1 });
+        self.locals.push(Local {
+            name,
+            depth: -1,
+            is_captured: false,
+        });
 
         Ok(())
     }
@@ -332,8 +338,15 @@ impl<'a> Compiler<'a> {
 
         loop {
             match self.locals.last() {
-                Some(Local { depth, .. }) if depth > &self.scope_depth => {
-                    self.emit_byte(OpCode::Pop as u8);
+                Some(Local {
+                    depth, is_captured, ..
+                }) if depth > &self.scope_depth => {
+                    if *is_captured {
+                        self.emit_byte(OpCode::CloseUpvalue as u8);
+                    } else {
+                        self.emit_byte(OpCode::Pop as u8);
+                    }
+
                     self.locals.pop();
                 }
                 _ => break,
@@ -644,6 +657,9 @@ impl<'a> Compiler<'a> {
                 // add local
                 let mut index = self.add_upvalue(upvalues_kind, idx, true)?;
 
+                // mark local
+                self.locals_stack[i][idx as usize].is_captured = true;
+
                 // unwind
                 while i < self.locals_stack.len() - 1 {
                     // upvalues = &mut self.upvalues_stack[i];
@@ -796,6 +812,7 @@ impl<'a> Compiler<'a> {
             vec![Local {
                 depth: 0,
                 name: String::from(""),
+                is_captured: false,
             }],
         ));
 

@@ -28,6 +28,7 @@ pub enum OpCode {
     Closure,
     GetUpvalue,
     SetUpvalue,
+    CloseUpvalue,
 }
 
 impl From<u8> for OpCode {
@@ -61,6 +62,7 @@ impl From<u8> for OpCode {
             0x19 => OpCode::Closure,
             0x1A => OpCode::GetUpvalue,
             0x1B => OpCode::SetUpvalue,
+            0x1C => OpCode::CloseUpvalue,
             _ => panic!("Byte doesn't map to any opcode."),
         }
     }

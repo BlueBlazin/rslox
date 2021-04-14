@@ -20,19 +20,22 @@ mod tests {
         use crate::gc::Heap;
 
         let source = r#"
+        var globalSet;
+        var globalGet;
+
         fun main() {
             var a = "initial";
-        
-            fun foo() {
-                print a;
-            }
 
-            a = "final";
+            fun set() { a = "updated"; }
+            fun get() { print a; }
 
-            foo();
+            globalSet = set;
+            globalGet = get;
         }
 
         main();
+        globalSet();
+        globalGet();
         "#;
 
         let heap = Heap::new();

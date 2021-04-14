@@ -41,6 +41,7 @@ impl fmt::Debug for ObjClosure {
 #[derive(Clone)]
 pub struct ObjUpvalue {
     pub location: usize,
+    pub handle: Option<ValueHandle>,
 }
 
 impl fmt::Debug for ObjUpvalue {

@@ -204,6 +204,7 @@ impl fmt::Debug for Chunk {
                 }
                 OpCode::GetUpvalue => byte_instr!(output, i, opcode, self),
                 OpCode::SetUpvalue => byte_instr!(output, i, opcode, self),
+                OpCode::CloseUpvalue => simple_instr!(output, i, opcode),
             }
 
             num += 1;
