@@ -1,9 +1,9 @@
-use crate::chunk::Chunk;
 use crate::error::{Internal, LoxError, Result};
 use crate::gc::Heap;
 use crate::object::{ObjClosure, ObjString, ObjUpvalue};
 use crate::opcodes::OpCode;
 use crate::value::{Value, ValueHandle};
+use crate::{chunk::Chunk, gc::Handle};
 use std::collections::HashMap;
 
 const FRAMES_MAX: usize = 64;
@@ -234,9 +234,8 @@ impl Vm {
                         let index = self.fetch() as usize;
 
                         if is_local {
-                            let fp = self.current_frame().fp;
-                            let location = self.stack[fp + index].unwrap();
-                            let handle = self.alloc(Value::Upvalue(ObjUpvalue { location }));
+                            let handle = self.capture_upvalue(index);
+
                             match self.get_value_mut(closure_handle)? {
                                 Value::Closure(closure) => {
                                     closure.upvalues.push(handle);
@@ -265,21 +264,43 @@ impl Vm {
                 }
                 OpCode::GetUpvalue => {
                     let idx = self.fetch() as usize;
-                    self.push(self.current_closure()?.upvalues[idx])?;
+                    let upvalue_handle = self.current_closure()?.upvalues[idx];
+
+                    match self.get_value(upvalue_handle)? {
+                        Value::Upvalue(upvalue) => {
+                            let handle =
+                                self.stack[upvalue.location].ok_or(LoxError::StackOverflow)?;
+
+                            self.push(handle)?;
+                        }
+                        _ => return Err(LoxError::_TempDevError("get_upvalue")),
+                    }
                 }
                 OpCode::SetUpvalue => {
                     let idx = self.fetch() as usize;
-                    let value_handle = self.peek()?;
-                    let value = self.get_value(value_handle)?.clone();
-                    let mut location = self.current_closure()?.upvalues[idx];
+                    let handle = self.peek()?;
+                    // let value = self.get_value(value_handle)?.clone();
 
-                    // *self.get_value_mut(location)? = value_handle;
-                    self.heap.set(&mut location, value);
+                    let upvalue_handle = self.current_closure()?.upvalues[idx];
+
+                    let location = match self.get_value(upvalue_handle)? {
+                        Value::Upvalue(upvalue) => Ok(upvalue.location),
+                        _ => Err(LoxError::_TempDevError("set_upvalue")),
+                    }?;
+
+                    self.stack[location] = Some(handle);
                 }
             };
         }
 
         return Ok(());
+    }
+
+    fn capture_upvalue(&mut self, index: usize) -> Handle<Value> {
+        let location = self.current_frame().fp + index;
+        let handle = self.alloc(Value::Upvalue(ObjUpvalue { location }));
+
+        handle
     }
 
     fn call_value(&mut self, handle: ValueHandle, arg_count: usize) -> Result<()> {
