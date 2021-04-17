@@ -32,16 +32,16 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn scan_string(&mut self) -> Option<Result<Token>> {
+    fn scan_string(&mut self) -> Result<Token> {
         let value = self.scan_until(|c| c == '"');
 
-        Some(self.expect('"').map(|_| Token {
+        self.expect('"').map(|_| Token {
             tok_type: TokenType::Str(value),
             line: self.line,
-        }))
+        })
     }
 
-    fn scan_number(&mut self, c: char) -> Option<Result<Token>> {
+    fn scan_number(&mut self, c: char) -> Result<Token> {
         let mut value = c.to_string();
 
         value.push_str(&self.scan_until(|c| !c.is_ascii_digit()));
@@ -52,15 +52,13 @@ impl<'a> Scanner<'a> {
             value.push_str(&self.scan_until(|c| !c.is_ascii_digit()));
         }
 
-        Some(
-            value
-                .parse()
-                .map_err(|_| LoxError::UnexpectedCharacter)
-                .map(|num: f64| Token {
-                    tok_type: TokenType::Num(num),
-                    line: self.line,
-                }),
-        )
+        value
+            .parse()
+            .map_err(|_| LoxError::UnexpectedCharacter)
+            .map(|num: f64| Token {
+                tok_type: TokenType::Num(num),
+                line: self.line,
+            })
     }
 
     fn scan_identifier(&mut self, c: char) -> Option<Result<Token>> {
@@ -188,8 +186,8 @@ impl<'a> Iterator for Scanner<'a> {
                     Some('=') => return consume_and_token!(GreaterEq, self.line, self),
                     _ => return token!(Greater, self.line),
                 },
-                Some('"') => return self.scan_string(),
-                Some(c) if c.is_ascii_digit() => return self.scan_number(c),
+                Some('"') => return Some(self.scan_string()),
+                Some(c) if c.is_ascii_digit() => return Some(self.scan_number(c)),
                 Some(c) if c.is_ascii_alphabetic() || c == '_' => return self.scan_identifier(c),
                 Some(_) => return Some(Err(LoxError::UnexpectedCharacter)),
                 None => return None,

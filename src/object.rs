@@ -27,11 +27,16 @@ impl fmt::Debug for ObjClosure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut output = format!(
             "Lox Function {:?}()\nBytecode of {:?}:\n",
-            &self.name.unwrap(),
-            &self.name.unwrap()
+            &self
+                .name
+                .map(|x| format!("{:?}", x))
+                .unwrap_or_else(|| "".to_owned()),
+            &self
+                .name
+                .map(|x| format!("{:?}", x))
+                .unwrap_or_else(|| "".to_owned())
         );
 
-        // output.push_str(&format!("{:?}---------", &self.chunk));
         output.push_str(&format!("{:?}", &self.chunk));
 
         write!(f, "{}", output)

@@ -137,7 +137,7 @@ impl Vm {
 
                     match (a, b) {
                         (Value::Number(a), Value::Number(b)) => {
-                            let cmp = a == b;
+                            let cmp = a.eq(&b);
                             self.push_value(Value::Bool(cmp))?;
                         }
                         (Value::Str(a), Value::Str(b)) => {
@@ -152,7 +152,7 @@ impl Vm {
 
                 OpCode::Print => {
                     let handle = self.pop()?;
-                    println!("{:?}", self.get_value(handle));
+                    println!("{:?}", self.get_value(handle)?);
                 }
                 OpCode::Pop => {
                     self.pop()?;
@@ -280,9 +280,6 @@ impl Vm {
                                 }
                             };
 
-                            // let handle =
-                            //     self.stack[upvalue.location].ok_or(LoxError::StackOverflow)?;
-
                             self.push(handle)?;
                         }
                         _ => return Err(LoxError::_TempDevError("get_upvalue")),
@@ -291,16 +288,8 @@ impl Vm {
                 OpCode::SetUpvalue => {
                     let idx = self.fetch() as usize;
                     let handle = self.peek()?;
-                    // let value = self.get_value(value_handle)?.clone();
 
                     let upvalue_handle = &self.current_closure()?.upvalues[idx];
-
-                    // let location = match self.get_value(upvalue_handle)? {
-                    //     Value::Upvalue(upvalue) => Ok(upvalue.location),
-                    //     _ => Err(LoxError::_TempDevError("set_upvalue")),
-                    // }?;
-
-                    // self.stack[location] = Some(handle);
 
                     match self
                         .heap
@@ -319,13 +308,13 @@ impl Vm {
                     }
                 }
                 OpCode::CloseUpvalue => {
-                    self.close_upvalues(self.stack.len() - 1)?;
+                    self.close_upvalues(self.sp - 1)?;
                     self.pop()?;
                 }
             };
         }
 
-        return Ok(());
+        Ok(())
     }
 
     fn close_upvalues(&mut self, last: usize) -> Result<()> {
@@ -342,7 +331,8 @@ impl Vm {
                         break;
                     }
 
-                    let handle = self.stack[location].ok_or(LoxError::StackUnderflow)?;
+                    let handle = self.stack[location]
+                        .ok_or(LoxError::_TempDevError("close_upvalues StackUnderflow"))?;
 
                     upvalue.handle = Some(handle);
                     self.open_upvalues.pop();
@@ -364,7 +354,7 @@ impl Vm {
             Ok(idx) => self
                 .open_upvalues
                 .get(idx)
-                .map(|(_, handle)| handle.clone())
+                .map(|(_, handle)| *handle)
                 .unwrap(),
             Err(idx) => {
                 let handle = self.alloc(Value::Upvalue(ObjUpvalue {
@@ -372,7 +362,7 @@ impl Vm {
                     handle: None,
                 }));
 
-                self.open_upvalues.insert(idx, (location, handle.clone()));
+                self.open_upvalues.insert(idx, (location, handle));
 
                 handle
             }

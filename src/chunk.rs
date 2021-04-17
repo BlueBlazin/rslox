@@ -3,23 +3,12 @@ use crate::value::ValueHandle;
 
 #[derive(Clone)]
 pub struct Chunk {
-    // pub name: String,
     pub code: Vec<u8>,
     pub lines: Vec<usize>,
     pub constants: Vec<ValueHandle>,
 }
 
 impl Chunk {
-    // pub fn new(name: String) -> Self {
-    pub fn new() -> Self {
-        Self {
-            // name,
-            code: Vec::with_capacity(8),
-            lines: Vec::with_capacity(8),
-            constants: Vec::with_capacity(4),
-        }
-    }
-
     pub fn write(&mut self, byte: u8, line: usize) {
         self.code.push(byte);
         self.lines.push(line);
@@ -31,5 +20,15 @@ impl Chunk {
         }
         self.constants.push(handle);
         Ok(self.constants.len() as u8 - 1)
+    }
+}
+
+impl Default for Chunk {
+    fn default() -> Self {
+        Self {
+            code: Vec::with_capacity(8),
+            lines: Vec::with_capacity(8),
+            constants: Vec::with_capacity(4),
+        }
     }
 }

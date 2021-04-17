@@ -52,8 +52,7 @@ impl<'a> Compiler<'a> {
         // NOTE: I don't think we need to worry about GC here. Still, be mindful.
         let function = ObjClosure {
             arity: 0,
-            // chunk: Chunk::new(String::from("main")),
-            chunk: Chunk::new(),
+            chunk: Chunk::default(),
             name: None,
             upvalues: vec![],
             upvalue_count: 0,
@@ -86,7 +85,7 @@ impl<'a> Compiler<'a> {
     }
 
     pub fn parse(&mut self) -> Result<()> {
-        while let Some(_) = self.peek() {
+        while self.peek().is_some() {
             self.declaration()?;
         }
 
@@ -114,7 +113,9 @@ impl<'a> Compiler<'a> {
 
         self.function(name)?;
 
-        self.define_variable(global)
+        self.define_variable(global);
+
+        Ok(())
     }
 
     fn function(&mut self, name: String) -> Result<()> {
@@ -159,7 +160,7 @@ impl<'a> Compiler<'a> {
 
                     let param_const = self.parse_variable()?;
 
-                    self.define_variable(param_const)?;
+                    self.define_variable(param_const);
 
                     match self.peek() {
                         Some(TokenType::RParen) | None => (),
@@ -194,7 +195,9 @@ impl<'a> Compiler<'a> {
 
         self.expect(TokenType::Semicolon)?;
 
-        self.define_variable(const_idx)
+        self.define_variable(const_idx);
+
+        Ok(())
     }
 
     fn parse_function_name(&mut self) -> Result<(u8, String)> {
@@ -205,7 +208,7 @@ impl<'a> Compiler<'a> {
                 if self.scope_depth > 0 {
                     Ok((0, id))
                 } else {
-                    let handle = self.make_string(id.clone())?;
+                    let handle = self.make_string(id.clone());
 
                     Ok((self.chunk().add_constant(handle)?, id))
                 }
@@ -223,7 +226,7 @@ impl<'a> Compiler<'a> {
                 if self.scope_depth > 0 {
                     Ok(0)
                 } else {
-                    let handle = self.make_string(id)?;
+                    let handle = self.make_string(id);
 
                     self.chunk().add_constant(handle)
                 }
@@ -244,7 +247,7 @@ impl<'a> Compiler<'a> {
                 break;
             }
 
-            if &name == &local.name {
+            if name == local.name {
                 return Err(LoxError::CompileError);
             }
         }
@@ -266,15 +269,13 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn define_variable(&mut self, const_idx: u8) -> Result<()> {
+    fn define_variable(&mut self, const_idx: u8) {
         dbg!("define_variable");
         if self.scope_depth <= 0 {
             self.emit_bytes(OpCode::DefineGlobal as u8, const_idx);
         } else {
             self.mark_initialized();
         }
-
-        Ok(())
     }
 
     fn mark_initialized(&mut self) {
@@ -474,7 +475,7 @@ impl<'a> Compiler<'a> {
 
     fn binary(&mut self) -> Result<()> {
         dbg!("binary");
-        let op = self.advance()?.ok_or(LoxError::UnexpectedEOF)?;
+        let op = self.advance()?.ok_or(LoxError::UnexpectedEof)?;
 
         self.parse_precedence(op.precedence() + 1)?;
 
@@ -496,7 +497,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn unary(&mut self) -> Result<()> {
-        let op = self.advance()?.ok_or(LoxError::UnexpectedEOF)?;
+        let op = self.advance()?.ok_or(LoxError::UnexpectedEof)?;
 
         self.expression()?;
 
@@ -544,7 +545,7 @@ impl<'a> Compiler<'a> {
     fn string(&mut self) -> Result<()> {
         match self.advance()? {
             Some(TokenType::Str(value)) => {
-                let handle = self.make_string(value)?;
+                let handle = self.make_string(value);
 
                 self.emit_const(handle)
             }
@@ -554,7 +555,7 @@ impl<'a> Compiler<'a> {
 
     fn variable(&mut self, can_assign: bool) -> Result<()> {
         dbg!("variable");
-        let name = self.advance()?.ok_or(LoxError::UnexpectedEOF)?;
+        let name = self.advance()?.ok_or(LoxError::UnexpectedEof)?;
         self.named_variable(name, can_assign)
     }
 
@@ -575,7 +576,7 @@ impl<'a> Compiler<'a> {
                     get_op = OpCode::GetUpvalue;
                     set_op = OpCode::SetUpvalue;
                 } else {
-                    let handle = self.make_string(value)?;
+                    let handle = self.make_string(value);
 
                     arg = self.chunk().add_constant(handle)?;
                     get_op = OpCode::GetGlobal;
@@ -602,9 +603,9 @@ impl<'a> Compiler<'a> {
         self.resolve_local_with(name, &self.locals)
     }
 
-    fn resolve_local_with(&self, name: &str, locals: &Vec<Local>) -> Result<Option<u8>> {
+    fn resolve_local_with(&self, name: &str, locals: &[Local]) -> Result<Option<u8>> {
         for (idx, local) in locals.iter().enumerate().rev() {
-            if &local.name == name {
+            if local.name == name {
                 if local.depth == -1 {
                     return Err(LoxError::CompileError);
                 }
@@ -634,6 +635,9 @@ impl<'a> Compiler<'a> {
         }
 
         // TODO: add max upvalues limit
+        if upvalues.len() >= u8::MAX as usize {
+            return Err(LoxError::_TempDevError("too many upvalues"));
+        }
 
         upvalues.push(Upvalue { index, is_local });
 
@@ -743,7 +747,7 @@ impl<'a> Compiler<'a> {
 
     fn prefix(&mut self, can_assign: bool) -> Result<()> {
         dbg!("prefix");
-        match self.peek().ok_or(LoxError::UnexpectedEOF)? {
+        match self.peek().ok_or(LoxError::UnexpectedEof)? {
             TokenType::LParen => self.grouping(),
             TokenType::Minus | TokenType::Bang => self.unary(),
             TokenType::Num(_) => self.number(),
@@ -756,7 +760,7 @@ impl<'a> Compiler<'a> {
 
     fn infix(&mut self) -> Result<()> {
         dbg!("infix");
-        match self.peek().ok_or(LoxError::UnexpectedEOF)? {
+        match self.peek().ok_or(LoxError::UnexpectedEof)? {
             TokenType::Plus
             | TokenType::Minus
             | TokenType::Star
@@ -789,7 +793,7 @@ impl<'a> Compiler<'a> {
     where
         T: FnMut(&mut Self) -> Result<()>,
     {
-        let handle = self.make_string(name)?;
+        let handle = self.make_string(name);
 
         let old_scope_depth = mem::replace(&mut self.scope_depth, 0);
 
@@ -799,8 +803,7 @@ impl<'a> Compiler<'a> {
             &mut self.function,
             ObjClosure {
                 arity: 0,
-                // chunk: Chunk::new(String::from("TODO: remove me")),
-                chunk: Chunk::new(),
+                chunk: Chunk::default(),
                 name: Some(handle),
                 upvalues: vec![],
                 upvalue_count: 0,
@@ -824,9 +827,6 @@ impl<'a> Compiler<'a> {
         self.scope_depth = old_scope_depth;
         self.locals = self.locals_stack.pop().unwrap();
         self.fun_type = old_fun_type;
-
-        // self.upvalues = self.upvalues_stack.pop().unwrap();
-        // let upvalues = mem::replace(&mut self.upvalues, self.upvalues_stack.pop().unwrap());
 
         self.emit_return();
 
@@ -852,8 +852,8 @@ impl<'a> Compiler<'a> {
         &mut self.function.chunk
     }
 
-    fn make_string(&mut self, value: String) -> Result<ValueHandle> {
-        Ok(self.heap.insert(Value::Str(ObjString { value })))
+    fn make_string(&mut self, value: String) -> ValueHandle {
+        self.heap.insert(Value::Str(ObjString { value }))
     }
 
     fn emit_return(&mut self) {

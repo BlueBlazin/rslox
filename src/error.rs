@@ -8,7 +8,7 @@ pub enum LoxError {
     StackOverflow,
     StackUnderflow,
     UnexpectedToken(Option<TokenType>),
-    UnexpectedEOF,
+    UnexpectedEof,
     TypeError,
     TooManyLocalVariables,
     UnexpectedCharacter,

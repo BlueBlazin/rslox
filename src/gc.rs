@@ -50,12 +50,6 @@ pub struct Heap<T: fmt::Debug> {
 }
 
 impl<T: fmt::Debug> Heap<T> {
-    pub fn new() -> Self {
-        Self {
-            objects: HashSet::new(),
-        }
-    }
-
     pub fn insert(&mut self, value: T) -> Handle<T> {
         let ptr = Box::into_raw(Box::new(value));
 
@@ -106,13 +100,21 @@ impl<T: fmt::Debug> Drop for Heap<T> {
     }
 }
 
+impl<T: fmt::Debug> Default for Heap<T> {
+    fn default() -> Self {
+        Self {
+            objects: HashSet::new(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_multi_mut() {
-        let mut heap: Heap<Vec<usize>> = Heap::new();
+        let mut heap: Heap<Vec<usize>> = Heap::default();
 
         let handle = heap.insert(vec![1, 2, 3]);
 

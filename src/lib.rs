@@ -20,25 +20,33 @@ mod tests {
         use crate::gc::Heap;
 
         let source = r#"
-        var globalSet;
-        var globalGet;
+        var globalOne;
+        var globalTwo;
 
         fun main() {
-            var a = "initial";
+            {
+                var a = "one";
+                fun one() {
+                    print a;
+                }
+                globalOne = one;
+            }
 
-            fun set() { a = "updated"; }
-            fun get() { print a; }
-
-            globalSet = set;
-            globalGet = get;
+            {
+                var a = "two";
+                fun two() {
+                    print a;
+                }
+                globalTwo = two;
+            }
         }
 
         main();
-        globalSet();
-        globalGet();
+        globalOne();
+        globalTwo();
         "#;
 
-        let heap = Heap::new();
+        let heap = Heap::default();
 
         let mut compiler = compiler::Compiler::new(source.chars(), heap);
 
