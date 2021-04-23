@@ -1,5 +1,5 @@
 use crate::error::{Internal, LoxError, Result};
-use crate::gc::Heap;
+use crate::gc::{mark_object, Heap};
 use crate::object::{ObjClosure, ObjString, ObjUpvalue};
 use crate::opcodes::OpCode;
 use crate::value::{Value, ValueHandle};
@@ -39,6 +39,7 @@ pub struct Vm {
     sp: usize,
     // TODO: use a BTreeMap instead
     open_upvalues: Vec<(usize, ValueHandle)>,
+    gray_stack: Vec<ValueHandle>,
 }
 
 impl Vm {
@@ -50,6 +51,7 @@ impl Vm {
             globals: HashMap::new(),
             sp: 0,
             open_upvalues: Vec::with_capacity(8),
+            gray_stack: Vec::with_capacity(8),
         }
     }
 
@@ -104,7 +106,10 @@ impl Vm {
                             let mut value = String::from(&a.value);
                             value.push_str(&b.value);
 
-                            self.push_value(Value::Str(ObjString { value }))?;
+                            self.push_value(Value::Str(ObjString {
+                                value,
+                                is_marked: false,
+                            }))?;
                         }
                         _ => return Err(LoxError::InvalidTypeForAddition),
                     }
@@ -360,6 +365,7 @@ impl Vm {
                 let handle = self.alloc(Value::Upvalue(ObjUpvalue {
                     location,
                     handle: None,
+                    is_marked: false,
                 }));
 
                 self.open_upvalues.insert(idx, (location, handle));
@@ -388,7 +394,7 @@ impl Vm {
         let handle = self.fetch_const();
 
         match self.get_value(handle)? {
-            Value::Str(ObjString { value }) => Ok(value.clone()),
+            Value::Str(ObjString { value, .. }) => Ok(value.clone()),
             value => Err(LoxError::UnexpectedValue(value.clone())),
         }
     }
@@ -501,9 +507,95 @@ impl Vm {
             .ok_or(LoxError::InternalError(Internal::InvalidHandle))
     }
 
-    #[inline]
     fn alloc(&mut self, value: Value) -> ValueHandle {
+        #[cfg(debug_assertions)]
+        {
+            self.collect_garbage().unwrap();
+        }
         self.heap.insert(value)
+    }
+
+    fn mark_roots(&mut self) -> Result<()> {
+        // mark stack variables
+        for i in 0..self.sp {
+            match &self.stack[i] {
+                Some(handle) => {
+                    mark_object(&self.heap, &mut self.gray_stack, handle)?;
+                }
+                _ => break,
+            }
+        }
+
+        // mark closure objects
+        for frame in &self.frames {
+            // self.heap.mark(frame.closure)?;
+            // self.mark_object(&frame.closure)?;
+            mark_object(&self.heap, &mut self.gray_stack, &frame.closure)?;
+        }
+
+        // mark upvalues
+        for (_, handle) in &self.open_upvalues {
+            // self.heap.mark(*handle)?;
+            mark_object(&self.heap, &mut self.gray_stack, handle)?;
+        }
+
+        // mark globals
+        self.mark_table()
+    }
+
+    fn trace_references(&mut self) -> Result<()> {
+        while let Some(handle) = self.gray_stack.pop() {
+            self.blacken_object(handle)?;
+        }
+
+        Ok(())
+    }
+
+    fn blacken_object(&mut self, handle: ValueHandle) -> Result<()> {
+        match self
+            .heap
+            .get(&handle)
+            .ok_or(LoxError::_TempDevError("blacken_object"))?
+        {
+            Value::Upvalue(obj) => {
+                if let Some(upvalue_handle) = &obj.handle {
+                    mark_object(&self.heap, &mut self.gray_stack, upvalue_handle)?;
+                }
+            }
+            Value::Closure(obj) => {
+                if let Some(name_handle) = &obj.name {
+                    mark_object(&self.heap, &mut self.gray_stack, name_handle)?;
+                }
+
+                for upvalue_handle in &obj.upvalues {
+                    mark_object(&self.heap, &mut self.gray_stack, upvalue_handle)?;
+                }
+            }
+            _ => (),
+        }
+
+        Ok(())
+    }
+
+    fn mark_table(&mut self) -> Result<()> {
+        for handle in self.globals.values() {
+            // self.heap.mark(*handle)?;
+            mark_object(&self.heap, &mut self.gray_stack, handle)?;
+        }
+
+        Ok(())
+    }
+
+    fn collect_garbage(&mut self) -> Result<()> {
+        dbg!("gc begin");
+
+        self.mark_roots()?;
+
+        self.trace_references()?;
+
+        dbg!("gc end");
+
+        unimplemented!()
     }
 
     #[inline]

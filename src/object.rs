@@ -5,6 +5,7 @@ use std::fmt;
 #[derive(Clone)]
 pub struct ObjString {
     pub value: String,
+    pub is_marked: bool,
 }
 
 impl fmt::Debug for ObjString {
@@ -21,6 +22,7 @@ pub struct ObjClosure {
     pub name: Option<ValueHandle>,
     pub upvalues: Vec<ValueHandle>,
     pub upvalue_count: usize,
+    pub is_marked: bool,
 }
 
 impl fmt::Debug for ObjClosure {
@@ -47,6 +49,7 @@ impl fmt::Debug for ObjClosure {
 pub struct ObjUpvalue {
     pub location: usize,
     pub handle: Option<ValueHandle>,
+    pub is_marked: bool,
 }
 
 impl fmt::Debug for ObjUpvalue {

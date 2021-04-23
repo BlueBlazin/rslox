@@ -56,6 +56,7 @@ impl<'a> Compiler<'a> {
             name: None,
             upvalues: vec![],
             upvalue_count: 0,
+            is_marked: false,
         };
 
         let mut locals = Vec::with_capacity(std::u8::MAX as usize + 1);
@@ -634,7 +635,6 @@ impl<'a> Compiler<'a> {
             }
         }
 
-        // TODO: add max upvalues limit
         if upvalues.len() >= u8::MAX as usize {
             return Err(LoxError::_TempDevError("too many upvalues"));
         }
@@ -807,6 +807,7 @@ impl<'a> Compiler<'a> {
                 name: Some(handle),
                 upvalues: vec![],
                 upvalue_count: 0,
+                is_marked: false,
             },
         );
 
@@ -853,7 +854,10 @@ impl<'a> Compiler<'a> {
     }
 
     fn make_string(&mut self, value: String) -> ValueHandle {
-        self.heap.insert(Value::Str(ObjString { value }))
+        self.heap.insert(Value::Str(ObjString {
+            value,
+            is_marked: false,
+        }))
     }
 
     fn emit_return(&mut self) {
