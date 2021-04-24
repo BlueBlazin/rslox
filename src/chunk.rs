@@ -1,11 +1,10 @@
 use crate::error::{LoxError, Result};
-use crate::value::ValueHandle;
+use crate::value::Value;
 
-#[derive(Clone)]
 pub struct Chunk {
     pub code: Vec<u8>,
     pub lines: Vec<usize>,
-    pub constants: Vec<ValueHandle>,
+    pub constants: Vec<Value>,
 }
 
 impl Chunk {
@@ -14,11 +13,11 @@ impl Chunk {
         self.lines.push(line);
     }
 
-    pub fn add_constant(&mut self, handle: ValueHandle) -> Result<u8> {
+    pub fn add_constant(&mut self, value: Value) -> Result<u8> {
         if self.constants.len() >= 256 {
             return Err(LoxError::CompileError);
         }
-        self.constants.push(handle);
+        self.constants.push(value);
         Ok(self.constants.len() as u8 - 1)
     }
 }

@@ -2,7 +2,7 @@ use crate::chunk::Chunk;
 use crate::codegen::Codegen;
 use crate::error::{LoxError, Result};
 use crate::gc::Heap;
-use crate::object::{ObjClosure, ObjString};
+use crate::object::{LoxObj, ObjClosure, ObjString};
 use crate::opcodes::OpCode;
 use crate::scanner::Scanner;
 use crate::token::{Token, TokenType};
@@ -41,14 +41,14 @@ pub struct Compiler<'a> {
     locals: Vec<Local>,
     scope_depth: isize,
     pub line: usize,
-    pub heap: Heap<Value>,
+    pub heap: Heap<LoxObj>,
     upvalues: Vec<Upvalue>,
     locals_stack: Vec<Vec<Local>>,
     upvalues_stack: Vec<Vec<Upvalue>>,
 }
 
 impl<'a> Compiler<'a> {
-    pub fn new(source: Chars<'a>, heap: Heap<Value>) -> Self {
+    pub fn new(source: Chars<'a>, heap: Heap<LoxObj>) -> Self {
         // NOTE: I don't think we need to worry about GC here. Still, be mindful.
         let function = ObjClosure {
             arity: 0,
@@ -131,9 +131,9 @@ impl<'a> Compiler<'a> {
 
         closure_obj.upvalue_count = self.upvalues.len();
 
-        let handle = self.heap.insert(Value::Closure(closure_obj));
-
-        self.emit_closure(handle)?;
+        let handle = self.heap.insert(LoxObj::Closure(closure_obj));
+        let value = Value::Obj(handle);
+        self.emit_closure(value)?;
 
         let upvalues = mem::replace(&mut self.upvalues, self.upvalues_stack.pop().unwrap());
 
@@ -211,7 +211,9 @@ impl<'a> Compiler<'a> {
                 } else {
                     let handle = self.make_string(id.clone());
 
-                    Ok((self.chunk().add_constant(handle)?, id))
+                    let value = Value::Obj(handle);
+
+                    Ok((self.chunk().add_constant(value)?, id))
                 }
             }
             token => Err(LoxError::UnexpectedToken(token)),
@@ -229,7 +231,9 @@ impl<'a> Compiler<'a> {
                 } else {
                     let handle = self.make_string(id);
 
-                    self.chunk().add_constant(handle)
+                    let value = Value::Obj(handle);
+
+                    self.chunk().add_constant(value)
                 }
             }
             token => Err(LoxError::UnexpectedToken(token)),
@@ -523,9 +527,8 @@ impl<'a> Compiler<'a> {
         dbg!("number");
         match self.advance()? {
             Some(TokenType::Num(n)) => {
-                let handle = self.heap.insert(Value::Number(n));
+                self.emit_const(Value::Number(n))?;
 
-                self.emit_const(handle)?;
                 Ok(())
             }
             token => Err(LoxError::UnexpectedToken(token)),
@@ -548,7 +551,9 @@ impl<'a> Compiler<'a> {
             Some(TokenType::Str(value)) => {
                 let handle = self.make_string(value);
 
-                self.emit_const(handle)
+                let value = Value::Obj(handle);
+
+                self.emit_const(value)
             }
             token => Err(LoxError::UnexpectedToken(token)),
         }
@@ -579,7 +584,9 @@ impl<'a> Compiler<'a> {
                 } else {
                     let handle = self.make_string(value);
 
-                    arg = self.chunk().add_constant(handle)?;
+                    let value = Value::Obj(handle);
+
+                    arg = self.chunk().add_constant(value)?;
                     get_op = OpCode::GetGlobal;
                     set_op = OpCode::SetGlobal;
                 }
@@ -651,7 +658,7 @@ impl<'a> Compiler<'a> {
         }
 
         let mut i = self.locals_stack.len() - 1;
-        // let mut upvalues = &mut self.upvalues;
+
         let mut upvalues_kind = UpvaluesKind::Current;
 
         loop {
@@ -854,7 +861,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn make_string(&mut self, value: String) -> ValueHandle {
-        self.heap.insert(Value::Str(ObjString {
+        self.heap.insert(LoxObj::Str(ObjString {
             value,
             is_marked: false,
         }))
@@ -873,15 +880,15 @@ impl<'a> Codegen for Compiler<'a> {
         self.chunk().write(value, line);
     }
 
-    fn emit_const(&mut self, handle: ValueHandle) -> Result<()> {
-        let const_idx = self.chunk().add_constant(handle)?;
+    fn emit_const(&mut self, value: Value) -> Result<()> {
+        let const_idx = self.chunk().add_constant(value)?;
         self.emit_bytes(OpCode::Constant as u8, const_idx);
         Ok(())
     }
 
-    fn emit_closure(&mut self, handle: ValueHandle) -> Result<()> {
+    fn emit_closure(&mut self, value: Value) -> Result<()> {
         dbg!("emit_closure");
-        let const_idx = self.chunk().add_constant(handle)?;
+        let const_idx = self.chunk().add_constant(value)?;
         self.emit_bytes(OpCode::Closure as u8, const_idx);
         Ok(())
     }

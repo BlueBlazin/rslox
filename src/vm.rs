@@ -1,9 +1,9 @@
+use crate::chunk::Chunk;
 use crate::error::{Internal, LoxError, Result};
 use crate::gc::{mark_object, Heap};
-use crate::object::{ObjClosure, ObjString, ObjUpvalue};
+use crate::object::{LoxObj, ObjClosure, ObjString, ObjUpvalue};
 use crate::opcodes::OpCode;
 use crate::value::{Value, ValueHandle};
-use crate::{chunk::Chunk, gc::Handle};
 use std::collections::HashMap;
 
 const FRAMES_MAX: usize = 64;
@@ -14,14 +14,14 @@ macro_rules! binary_op {
         let b = $self.pop_number()?;
         let a = $self.pop_number()?;
 
-        $self.push_value(Value::Number(a $op b))?;
+        $self.push(Value::Number(a $op b))?;
     }};
 
     ($op:tt, $self:expr, $type:tt) => {{
         let b = $self.pop_number()?;
         let a = $self.pop_number()?;
 
-        $self.push_value(Value::$type(a $op b))?;
+        $self.push(Value::$type(a $op b))?;
     }};
 }
 
@@ -32,10 +32,10 @@ pub struct CallFrame {
 }
 
 pub struct Vm {
-    pub stack: Vec<Option<ValueHandle>>,
-    pub heap: Heap<Value>,
+    pub stack: Vec<Option<Value>>,
+    pub heap: Heap<LoxObj>,
     pub frames: Vec<CallFrame>,
-    globals: HashMap<String, ValueHandle>,
+    globals: HashMap<String, Value>,
     sp: usize,
     // TODO: use a BTreeMap instead
     open_upvalues: Vec<(usize, ValueHandle)>,
@@ -43,7 +43,7 @@ pub struct Vm {
 }
 
 impl Vm {
-    pub fn new(heap: Heap<Value>) -> Self {
+    pub fn new(heap: Heap<LoxObj>) -> Self {
         Self {
             stack: vec![None; STACK_MAX],
             heap,
@@ -55,12 +55,12 @@ impl Vm {
         }
     }
 
-    pub fn interpret(&mut self, function: ObjClosure) -> Result<()> {
-        let handle = self.alloc(Value::Closure(function));
+    pub fn interpret(&mut self, closure: ObjClosure) -> Result<()> {
+        let value = self.alloc_value(LoxObj::Closure(closure));
 
-        self.push(handle)?;
+        self.push(value)?;
 
-        self.call_value(handle, 0)?;
+        self.call_value(value, 0)?;
 
         self.run()
     }
@@ -69,7 +69,7 @@ impl Vm {
         while let Some(opcode) = self.fetch_opcode() {
             match OpCode::from(*opcode) {
                 OpCode::Return => {
-                    let handle = self.pop()?;
+                    let value = self.pop()?;
 
                     let popped_frame = self.frames.pop().unwrap();
 
@@ -77,39 +77,46 @@ impl Vm {
 
                     self.sp = popped_frame.fp;
 
-                    self.push(handle)?;
+                    self.push(value)?;
                 }
                 OpCode::Constant => {
-                    let handle = self.fetch_const();
+                    let value = self.fetch_const();
 
-                    self.push(handle)?
+                    self.push(value)?
                 }
                 OpCode::Negate => {
-                    let value = self.pop_number()?;
+                    let n = self.pop_number()?;
 
-                    self.push_value(Value::Number(-value))?;
+                    self.push(Value::Number(-n))?;
                 }
                 OpCode::Add => {
-                    let handle_b = self.pop()?;
-                    let handle_a = self.pop()?;
-
-                    let b = self.get_value(handle_b)?;
-                    let a = self.get_value(handle_a)?;
+                    let b = self.pop()?;
+                    let a = self.pop()?;
 
                     match (a, b) {
                         (Value::Number(a), Value::Number(b)) => {
-                            let sum = *a + *b;
+                            let sum = a + b;
 
-                            self.push_value(Value::Number(sum))?;
+                            self.push(Value::Number(sum))?;
                         }
-                        (Value::Str(a), Value::Str(b)) => {
-                            let mut value = String::from(&a.value);
-                            value.push_str(&b.value);
+                        (Value::Obj(handle_a), Value::Obj(handle_b)) => {
+                            let obj_a = self.get_obj(handle_a)?;
+                            let obj_b = self.get_obj(handle_b)?;
 
-                            self.push_value(Value::Str(ObjString {
-                                value,
-                                is_marked: false,
-                            }))?;
+                            match (obj_a, obj_b) {
+                                (LoxObj::Str(a), LoxObj::Str(b)) => {
+                                    let mut value = String::from(&a.value);
+                                    value.push_str(&b.value);
+
+                                    let lox_val = self.alloc_value(LoxObj::Str(ObjString {
+                                        value,
+                                        is_marked: false,
+                                    }));
+
+                                    self.push(lox_val)?;
+                                }
+                                _ => return Err(LoxError::TypeError),
+                            }
                         }
                         _ => return Err(LoxError::InvalidTypeForAddition),
                     }
@@ -118,36 +125,36 @@ impl Vm {
                 OpCode::Multiply => binary_op!(*, self),
                 OpCode::Divide => binary_op!(/, self),
 
-                OpCode::Nil => self.push_value(Value::Nil)?,
-                OpCode::True => self.push_value(Value::Bool(true))?,
-                OpCode::False => self.push_value(Value::Bool(false))?,
+                OpCode::Nil => self.push(Value::Nil)?,
+                OpCode::True => self.push(Value::Bool(true))?,
+                OpCode::False => self.push(Value::Bool(false))?,
 
                 OpCode::Not => {
-                    let handle = self.pop()?;
+                    let value = self.pop()?.is_falsey();
 
-                    let value = self
-                        .heap
-                        .get(&handle)
-                        .ok_or(LoxError::InternalError(Internal::InvalidHandle))?
-                        .is_falsey();
-
-                    self.push_value(Value::Bool(value))?;
+                    self.push(Value::Bool(value))?;
                 }
                 OpCode::Equal => {
-                    let handle_b = self.pop()?;
-                    let handle_a = self.pop()?;
-
-                    let b = self.get_value(handle_b)?;
-                    let a = self.get_value(handle_a)?;
+                    let b = self.pop()?;
+                    let a = self.pop()?;
 
                     match (a, b) {
                         (Value::Number(a), Value::Number(b)) => {
                             let cmp = a.eq(&b);
-                            self.push_value(Value::Bool(cmp))?;
+                            self.push(Value::Bool(cmp))?;
                         }
-                        (Value::Str(a), Value::Str(b)) => {
-                            let cmp = a.value == b.value;
-                            self.push_value(Value::Bool(cmp))?;
+                        (Value::Obj(handle_a), Value::Obj(handle_b)) => {
+                            let obj_a = self.get_obj(handle_a)?;
+                            let obj_b = self.get_obj(handle_b)?;
+
+                            match (obj_a, obj_b) {
+                                (LoxObj::Str(a), LoxObj::Str(b)) => {
+                                    let cmp = a.value == b.value;
+
+                                    self.push(Value::Bool(cmp))?;
+                                }
+                                _ => return Err(LoxError::TypeError),
+                            }
                         }
                         _ => return Err(LoxError::InvalidTypeForEquals),
                     }
@@ -156,28 +163,28 @@ impl Vm {
                 OpCode::Less => binary_op!(<, self, Bool),
 
                 OpCode::Print => {
-                    let handle = self.pop()?;
-                    println!("{:?}", self.get_value(handle)?);
+                    let value = self.pop()?;
+                    println!("{:?}", value);
                 }
                 OpCode::Pop => {
                     self.pop()?;
                 }
                 OpCode::DefineGlobal => {
                     let name = self.fetch_str_const()?;
-                    let handle = self.pop()?;
-                    self.globals.insert(name, handle);
+                    let value = self.pop()?;
+                    self.globals.insert(name, value);
                 }
                 OpCode::GetGlobal => {
                     // TODO: explore the possibility of using &'a str instead
                     // for querying the globals hash table.
                     // NOTE: if that is possible, take care to avoid GC cleanup.
                     let name = self.fetch_str_const()?;
-                    let handle = *self
+                    let value = *self
                         .globals
                         .get(&name)
                         .ok_or(LoxError::InternalError(Internal::GlobalLookupFailure))?;
 
-                    self.push(handle)?;
+                    self.push(value)?;
                 }
                 OpCode::SetGlobal => {
                     let name = self.fetch_str_const()?;
@@ -186,28 +193,28 @@ impl Vm {
                         return Err(LoxError::InternalError(Internal::GlobalLookupFailure));
                     }
 
-                    let handle = self.peek()?;
+                    let value = self.peek()?;
 
-                    self.globals.insert(name, handle);
+                    self.globals.insert(name, value);
                 }
                 OpCode::GetLocal => {
                     let idx = self.fetch() as usize;
                     let fp = self.current_frame().fp;
-                    let handle = self.stack[fp + idx].ok_or(LoxError::StackOverflow)?;
-                    self.push(handle)?;
+                    let value = self.stack[fp + idx].ok_or(LoxError::StackOverflow)?;
+                    self.push(value)?;
                 }
                 OpCode::SetLocal => {
                     let idx = self.fetch() as usize;
-                    let handle = self.peek()?;
+                    let value = self.peek()?;
                     let fp = self.current_frame().fp;
-                    self.stack[fp + idx] = Some(handle);
+                    self.stack[fp + idx] = Some(value);
                 }
                 OpCode::JumpIfFalse => {
                     let offset = self.fetch16() as usize;
 
-                    let handle = self.peek()?;
+                    let value = self.peek()?;
 
-                    if self.get_value(handle).unwrap().is_falsey() {
+                    if value.is_falsey() {
                         self.current_frame_mut().ip += offset;
                     }
                 }
@@ -222,18 +229,64 @@ impl Vm {
                 OpCode::Call => {
                     let arg_count = self.fetch() as usize;
 
-                    let handle =
+                    let value =
                         self.stack[self.sp - 1 - arg_count].ok_or(LoxError::StackUnderflow)?;
 
-                    self.call_value(handle, arg_count)?;
+                    self.call_value(value, arg_count)?;
                 }
+                // OpCode::Closure => {
+                //     let closure_handle = self.fetch_const();
+
+                //     self.push(closure_handle)?;
+
+                //     let upvalue_count = match self.get_value(closure_handle)? {
+                //         Value::Closure(closure) => Ok(closure.upvalue_count),
+                //         _ => Err(LoxError::_TempDevError(
+                //             "error in closure upvalue_count match",
+                //         )),
+                //     }?;
+
+                //     for _ in 0..upvalue_count {
+                //         let is_local = self.fetch() != 0;
+                //         let index = self.fetch() as usize;
+
+                //         if is_local {
+                //             let handle = self.capture_upvalue(index);
+
+                //             match self.get_value_mut(closure_handle)? {
+                //                 Value::Closure(closure) => {
+                //                     closure.upvalues.push(handle);
+                //                 }
+                //                 _ => {
+                //                     return Err(LoxError::_TempDevError(
+                //                         "error in closure if is_local",
+                //                     ))
+                //                 }
+                //             }
+                //         } else {
+                //             let upvalue_handle = self.current_closure()?.upvalues[index];
+
+                //             match self.get_value_mut(closure_handle)? {
+                //                 Value::Closure(closure) => {
+                //                     closure.upvalues.push(upvalue_handle);
+                //                 }
+                //                 _ => {
+                //                     return Err(LoxError::_TempDevError(
+                //                         "error in closure match get_value_mut",
+                //                     ))
+                //                 }
+                //             }
+                //         }
+                //     }
+                // }
                 OpCode::Closure => {
-                    let closure_handle = self.fetch_const();
+                    let value = self.fetch_const();
+                    let closure_handle = self.get_handle(&value)?;
 
-                    self.push(closure_handle)?;
+                    self.push(value)?;
 
-                    let upvalue_count = match self.get_value(closure_handle)? {
-                        Value::Closure(closure) => Ok(closure.upvalue_count),
+                    let upvalue_count = match self.get_obj(closure_handle)? {
+                        LoxObj::Closure(closure) => Ok(closure.upvalue_count),
                         _ => Err(LoxError::_TempDevError(
                             "error in closure upvalue_count match",
                         )),
@@ -246,8 +299,8 @@ impl Vm {
                         if is_local {
                             let handle = self.capture_upvalue(index);
 
-                            match self.get_value_mut(closure_handle)? {
-                                Value::Closure(closure) => {
+                            match self.get_obj_mut(closure_handle)? {
+                                LoxObj::Closure(closure) => {
                                     closure.upvalues.push(handle);
                                 }
                                 _ => {
@@ -259,8 +312,8 @@ impl Vm {
                         } else {
                             let upvalue_handle = self.current_closure()?.upvalues[index];
 
-                            match self.get_value_mut(closure_handle)? {
-                                Value::Closure(closure) => {
+                            match self.get_obj_mut(closure_handle)? {
+                                LoxObj::Closure(closure) => {
                                     closure.upvalues.push(upvalue_handle);
                                 }
                                 _ => {
@@ -276,23 +329,23 @@ impl Vm {
                     let idx = self.fetch() as usize;
                     let upvalue_handle = self.current_closure()?.upvalues[idx];
 
-                    match self.get_value(upvalue_handle)? {
-                        Value::Upvalue(upvalue) => {
-                            let handle = match upvalue.handle {
-                                Some(handle) => handle,
+                    match self.get_obj(upvalue_handle)? {
+                        LoxObj::Upvalue(upvalue) => {
+                            let value = match upvalue.value {
+                                Some(value) => value,
                                 None => {
                                     self.stack[upvalue.location].ok_or(LoxError::StackOverflow)?
                                 }
                             };
 
-                            self.push(handle)?;
+                            self.push(value)?;
                         }
                         _ => return Err(LoxError::_TempDevError("get_upvalue")),
                     }
                 }
                 OpCode::SetUpvalue => {
                     let idx = self.fetch() as usize;
-                    let handle = self.peek()?;
+                    let value = self.peek()?;
 
                     let upvalue_handle = &self.current_closure()?.upvalues[idx];
 
@@ -301,12 +354,12 @@ impl Vm {
                         .get_mut(upvalue_handle)
                         .ok_or(LoxError::InternalError(Internal::InvalidHandle))?
                     {
-                        Value::Upvalue(upvalue) => match upvalue.handle {
+                        LoxObj::Upvalue(upvalue) => match upvalue.value {
                             Some(_) => {
-                                upvalue.handle = Some(handle);
+                                upvalue.value = Some(value);
                             }
                             None => {
-                                self.stack[upvalue.location] = Some(handle);
+                                self.stack[upvalue.location] = Some(value);
                             }
                         },
                         _ => return Err(LoxError::_TempDevError("set_upvalue")),
@@ -329,17 +382,17 @@ impl Vm {
                 .get_mut(handle)
                 .ok_or(LoxError::InternalError(Internal::InvalidHandle))?
             {
-                Value::Upvalue(upvalue) => {
+                LoxObj::Upvalue(upvalue) => {
                     let location = upvalue.location;
 
                     if location < last {
                         break;
                     }
 
-                    let handle = self.stack[location]
+                    let value = self.stack[location]
                         .ok_or(LoxError::_TempDevError("close_upvalues StackUnderflow"))?;
 
-                    upvalue.handle = Some(handle);
+                    upvalue.value = Some(value);
                     self.open_upvalues.pop();
                 }
                 _ => return Err(LoxError::_TempDevError("close_upvalues get_value_mut")),
@@ -349,12 +402,12 @@ impl Vm {
         Ok(())
     }
 
-    fn capture_upvalue(&mut self, index: usize) -> Handle<Value> {
+    fn capture_upvalue(&mut self, index: usize) -> ValueHandle {
         let location = self.current_frame().fp + index;
 
         match self
             .open_upvalues
-            .binary_search_by_key(&location, |&(x, _)| x)
+            .binary_search_by_key(&location, |&(i, _)| i)
         {
             Ok(idx) => self
                 .open_upvalues
@@ -362,22 +415,39 @@ impl Vm {
                 .map(|(_, handle)| *handle)
                 .unwrap(),
             Err(idx) => {
-                let handle = self.alloc(Value::Upvalue(ObjUpvalue {
+                let upvalue_handle = self.alloc(LoxObj::Upvalue(ObjUpvalue {
                     location,
-                    handle: None,
+                    value: None,
                     is_marked: false,
                 }));
 
-                self.open_upvalues.insert(idx, (location, handle));
+                self.open_upvalues.insert(idx, (location, upvalue_handle));
 
-                handle
+                upvalue_handle
             }
         }
     }
 
-    fn call_value(&mut self, handle: ValueHandle, arg_count: usize) -> Result<()> {
-        match self.get_value(handle)? {
-            Value::Closure(_) => {
+    // fn call_value(&mut self, handle: ValueHandle, arg_count: usize) -> Result<()> {
+    //     match self.get_value(handle)? {
+    //         Value::Closure(_) => {
+    //             self.frames.push(CallFrame {
+    //                 closure: handle,
+    //                 ip: 0,
+    //                 fp: self.sp - 1 - arg_count,
+    //             });
+
+    //             Ok(())
+    //         }
+    //         _ => Err(LoxError::ValueNotCallable),
+    //     }
+    // }
+
+    fn call_value(&mut self, value: Value, arg_count: usize) -> Result<()> {
+        let handle = self.get_handle(&value)?;
+
+        match self.get_obj(handle)? {
+            LoxObj::Closure(_) => {
                 self.frames.push(CallFrame {
                     closure: handle,
                     ip: 0,
@@ -390,12 +460,22 @@ impl Vm {
         }
     }
 
-    fn fetch_str_const(&mut self) -> Result<String> {
-        let handle = self.fetch_const();
+    fn get_handle(&self, value: &Value) -> Result<ValueHandle> {
+        match value {
+            Value::Obj(handle) => Ok(*handle),
+            _ => Err(LoxError::_TempDevError("get_handle")),
+        }
+    }
 
-        match self.get_value(handle)? {
-            Value::Str(ObjString { value, .. }) => Ok(value.clone()),
-            value => Err(LoxError::UnexpectedValue(value.clone())),
+    fn fetch_str_const(&mut self) -> Result<String> {
+        let value = self.fetch_const();
+
+        match value {
+            Value::Obj(handle) => match self.get_obj(handle)? {
+                LoxObj::Str(s) => Ok(s.value.clone()),
+                _ => Err(LoxError::UnexpectedValue(value)),
+            },
+            value => Err(LoxError::UnexpectedValue(value)),
         }
     }
 
@@ -419,8 +499,8 @@ impl Vm {
 
     fn current_closure(&self) -> Result<&ObjClosure> {
         let handle = self.current_frame().closure;
-        match self.get_value(handle)? {
-            Value::Closure(closure) => Ok(closure),
+        match self.get_obj(handle)? {
+            LoxObj::Closure(closure) => Ok(closure),
             _ => Err(LoxError::RuntimeError),
         }
     }
@@ -446,29 +526,41 @@ impl Vm {
     }
 
     #[inline]
-    fn fetch_const(&mut self) -> ValueHandle {
+    fn fetch_const(&mut self) -> Value {
         let idx = self.fetch() as usize;
 
         self.chunk().unwrap().constants[idx]
     }
 
-    fn push(&mut self, handle: ValueHandle) -> Result<()> {
+    fn push(&mut self, value: Value) -> Result<()> {
         if self.sp == self.stack.len() {
             Err(LoxError::StackOverflow)
         } else {
-            self.stack[self.sp] = Some(handle);
+            self.stack[self.sp] = Some(value);
             self.sp += 1;
             Ok(())
         }
     }
 
-    fn push_value(&mut self, value: Value) -> Result<()> {
-        let handle = self.alloc(value);
+    // fn push_value(&mut self, value: Value) -> Result<()> {
+    //     let handle = self.alloc(value);
 
-        self.push(handle)
-    }
+    //     self.push(handle)
+    // }
 
-    fn pop(&mut self) -> Result<ValueHandle> {
+    // fn pop(&mut self) -> Result<ValueHandle> {
+    //     if self.sp == 0 {
+    //         return Err(LoxError::StackUnderflow);
+    //     }
+
+    //     self.sp -= 1;
+
+    //     self.stack[self.sp]
+    //         .take()
+    //         .ok_or(LoxError::InternalError(Internal::CorruptedStack))
+    // }
+
+    fn pop(&mut self) -> Result<Value> {
         if self.sp == 0 {
             return Err(LoxError::StackUnderflow);
         }
@@ -480,49 +572,71 @@ impl Vm {
             .ok_or(LoxError::InternalError(Internal::CorruptedStack))
     }
 
-    fn peek(&mut self) -> Result<ValueHandle> {
+    fn peek(&mut self) -> Result<Value> {
         self.stack[self.sp - 1].ok_or(LoxError::InternalError(Internal::CorruptedStack))
     }
 
     fn pop_number(&mut self) -> Result<f64> {
-        let handle = self.pop()?;
+        let value = self.pop()?;
 
-        match self.get_value(handle)? {
-            Value::Number(n) => Ok(*n),
-            value => Err(LoxError::UnexpectedValue(value.clone())),
+        match value {
+            Value::Number(n) => Ok(n),
+            value => Err(LoxError::UnexpectedValue(value)),
         }
     }
 
+    // #[inline]
+    // fn get_value(&self, handle: ValueHandle) -> Result<&Value> {
+    //     self.heap
+    //         .get(&handle)
+    //         .ok_or(LoxError::InternalError(Internal::InvalidHandle))
+    // }
+
+    // #[inline]
+    // fn get_value_mut(&mut self, handle: ValueHandle) -> Result<&mut Value> {
+    //     self.heap
+    //         .get_mut(&handle)
+    //         .ok_or(LoxError::InternalError(Internal::InvalidHandle))
+    // }
+
     #[inline]
-    fn get_value(&self, handle: ValueHandle) -> Result<&Value> {
+    fn get_obj(&self, handle: ValueHandle) -> Result<&LoxObj> {
         self.heap
             .get(&handle)
             .ok_or(LoxError::InternalError(Internal::InvalidHandle))
     }
 
     #[inline]
-    fn get_value_mut(&mut self, handle: ValueHandle) -> Result<&mut Value> {
+    fn get_obj_mut(&mut self, handle: ValueHandle) -> Result<&mut LoxObj> {
         self.heap
             .get_mut(&handle)
             .ok_or(LoxError::InternalError(Internal::InvalidHandle))
     }
 
-    fn alloc(&mut self, value: Value) -> ValueHandle {
+    fn alloc(&mut self, obj: LoxObj) -> ValueHandle {
         #[cfg(debug_assertions)]
         {
             self.collect_garbage().unwrap();
         }
-        self.heap.insert(value)
+        self.heap.insert(obj)
+    }
+
+    fn alloc_value(&mut self, obj: LoxObj) -> Value {
+        let handle = self.alloc(obj);
+
+        Value::Obj(handle)
     }
 
     fn mark_roots(&mut self) -> Result<()> {
         // mark stack variables
         for i in 0..self.sp {
             match &self.stack[i] {
-                Some(handle) => {
-                    mark_object(&self.heap, &mut self.gray_stack, handle)?;
+                Some(value) => {
+                    if let Value::Obj(handle) = value {
+                        mark_object(&self.heap, &mut self.gray_stack, handle)?;
+                    }
                 }
-                _ => break,
+                None => break,
             }
         }
 
@@ -551,18 +665,54 @@ impl Vm {
         Ok(())
     }
 
+    // fn blacken_object(&mut self, handle: ValueHandle) -> Result<()> {
+    //     match self
+    //         .heap
+    //         .get(&handle)
+    //         .ok_or(LoxError::_TempDevError("blacken_object"))?
+    //     {
+    //         Value::Upvalue(obj) => {
+    //             if let Some(upvalue_handle) = &obj.handle {
+    //                 mark_object(&self.heap, &mut self.gray_stack, upvalue_handle)?;
+    //             }
+    //         }
+    //         Value::Closure(obj) => {
+    //             if let Some(name_handle) = &obj.name {
+    //                 mark_object(&self.heap, &mut self.gray_stack, name_handle)?;
+    //             }
+
+    //             for upvalue_handle in &obj.upvalues {
+    //                 mark_object(&self.heap, &mut self.gray_stack, upvalue_handle)?;
+    //             }
+    //         }
+    //         _ => (),
+    //     }
+
+    //     Ok(())
+    // }
+
     fn blacken_object(&mut self, handle: ValueHandle) -> Result<()> {
-        match self
+        // let value = self.get_obj(handle)?;
+        let value = self
             .heap
             .get(&handle)
-            .ok_or(LoxError::_TempDevError("blacken_object"))?
-        {
-            Value::Upvalue(obj) => {
-                if let Some(upvalue_handle) = &obj.handle {
-                    mark_object(&self.heap, &mut self.gray_stack, upvalue_handle)?;
+            .ok_or(LoxError::InternalError(Internal::InvalidHandle))?;
+
+        match value {
+            LoxObj::Upvalue(obj) => {
+                // if let Some(Value::Obj(upvalue_handle)) = &obj.value {
+                //     mark_object(&self.heap, &mut self.gray_stack, upvalue_handle)?;
+                // }
+
+                match &obj.value {
+                    Some(Value::Obj(upvalue_handle)) => {
+                        mark_object(&self.heap, &mut self.gray_stack, upvalue_handle)?;
+                    }
+                    Some(_) => return Err(LoxError::_TempDevError("expected upvalue obj")),
+                    None => (),
                 }
             }
-            Value::Closure(obj) => {
+            LoxObj::Closure(obj) => {
                 if let Some(name_handle) = &obj.name {
                     mark_object(&self.heap, &mut self.gray_stack, name_handle)?;
                 }
@@ -578,9 +728,13 @@ impl Vm {
     }
 
     fn mark_table(&mut self) -> Result<()> {
-        for handle in self.globals.values() {
+        for value in self.globals.values() {
             // self.heap.mark(*handle)?;
-            mark_object(&self.heap, &mut self.gray_stack, handle)?;
+            // mark_object(&self.heap, &mut self.gray_stack, handle)?;
+            // self.mark_value(value)?;
+            if let Value::Obj(handle) = value {
+                mark_object(&self.heap, &mut self.gray_stack, handle)?;
+            }
         }
 
         Ok(())
@@ -612,8 +766,8 @@ impl Vm {
     fn chunk(&mut self) -> Result<&Chunk> {
         let handle = self.current_frame().closure;
 
-        match self.get_value(handle) {
-            Ok(Value::Closure(f)) => Ok(&f.chunk),
+        match self.get_obj(handle) {
+            Ok(LoxObj::Closure(f)) => Ok(&f.chunk),
             _ => Err(LoxError::RuntimeError),
         }
     }

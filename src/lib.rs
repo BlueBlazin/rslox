@@ -20,30 +20,15 @@ mod tests {
         use crate::gc::Heap;
 
         let source = r#"
-        var globalOne;
-        var globalTwo;
-
-        fun main() {
-            {
-                var a = "one";
-                fun one() {
-                    print a;
-                }
-                globalOne = one;
+        fun fib(n) {
+            if (n < 2) {
+                return n;
             }
 
-            {
-                var a = "two";
-                fun two() {
-                    print a;
-                }
-                globalTwo = two;
-            }
+            return fib(n - 1) + fib(n - 2);
         }
 
-        main();
-        globalOne();
-        globalTwo();
+        print fib(8 * 2);
         "#;
 
         let heap = Heap::default();

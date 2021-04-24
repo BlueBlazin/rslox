@@ -1,12 +1,12 @@
 use crate::gc::Handle;
-use crate::object::{ObjClosure, ObjString, ObjUpvalue};
+use crate::object::LoxObj;
 use std::fmt;
 
-#[derive(Clone)]
+pub type ValueHandle = Handle<LoxObj>;
+
+#[derive(Copy, Clone)]
 pub enum Value {
-    Str(ObjString),
-    Closure(ObjClosure),
-    Upvalue(ObjUpvalue),
+    Obj(ValueHandle),
     Bool(bool),
     Number(f64),
     Nil,
@@ -21,14 +21,10 @@ impl Value {
 impl fmt::Debug for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Value::Str(obj_string) => write!(f, "{:?}", obj_string),
-            Value::Closure(obj_closure) => write!(f, "{:?}", obj_closure),
-            Value::Upvalue(obj_upvalue) => write!(f, "{:?}", obj_upvalue),
+            Value::Obj(handle) => write!(f, "{:?}", handle),
             Value::Bool(b) => write!(f, "{}", b),
             Value::Number(n) => write!(f, "{}", n),
             Value::Nil => write!(f, "nil"),
         }
     }
 }
-
-pub type ValueHandle = Handle<Value>;

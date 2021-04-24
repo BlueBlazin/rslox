@@ -1,10 +1,10 @@
 use crate::error::Result;
-use crate::value::ValueHandle;
+use crate::value::Value;
 
 pub trait Codegen {
     fn emit_byte(&mut self, value: u8);
-    fn emit_const(&mut self, handle: ValueHandle) -> Result<()>;
-    fn emit_closure(&mut self, handle: ValueHandle) -> Result<()>;
+    fn emit_const(&mut self, value: Value) -> Result<()>;
+    fn emit_closure(&mut self, value: Value) -> Result<()>;
     fn emit_jump(&mut self, value: u8) -> usize;
     fn emit_loop(&mut self, loop_start: usize) -> Result<()>;
 

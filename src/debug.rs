@@ -1,4 +1,5 @@
 use crate::chunk::Chunk;
+use crate::object::LoxObj;
 use crate::opcodes::OpCode;
 use crate::value::Value;
 use std::fmt;
@@ -86,38 +87,42 @@ impl fmt::Debug for Chunk {
                 OpCode::Call => byte_instr!(output, i, opcode, self),
                 OpCode::Closure => {
                     let constant = self.code[i + 1] as usize;
-                    let handle = self.constants[constant];
+                    let value = self.constants[constant];
 
-                    output.push_str(&format!("{:12} {:4} {:?}\n", opcode, constant, handle));
+                    output.push_str(&format!("{:12} {:4} {:?}\n", opcode, constant, value));
 
                     i += 2;
 
-                    // Justification for unsafe: At this point we're debugging,
-                    // so our program has already failed making using unsafe slightly less worse
-                    // than otherwise. The other, more important, reason is that without it
+                    let handle = match value {
+                        Value::Obj(handle) => handle,
+                        _ => panic!("Unexpected value"),
+                    };
+
+                    // Justification for unsafe: Without it
                     // we need a separate function which takes the heap as an argument.
-                    let value = unsafe { &*handle.ptr };
-
-                    match value {
-                        Value::Closure(closure) => {
-                            let upvalue_count = closure.upvalue_count;
-
-                            for _ in 0..upvalue_count {
-                                let is_local = self.code[i] != 0;
-                                let index = self.code[i + 1];
-                                i += 2;
-
-                                output.push_str(&format!(
-                                    "{:04}    |                 {} {}\n",
-                                    i - 2,
-                                    is_local,
-                                    index
-                                ));
-                            }
-                            output.push_str(&format!("----End {:?}----\n", &closure.name.unwrap()));
+                    let closure = unsafe {
+                        match &*handle.ptr {
+                            LoxObj::Closure(closure) => closure,
+                            _ => panic!("Unexpected value"),
                         }
-                        _ => panic!("Unexpected type in debug. Expected Closure."),
+                    };
+
+                    let upvalue_count = closure.upvalue_count;
+
+                    for _ in 0..upvalue_count {
+                        let is_local = self.code[i] != 0;
+                        let index = self.code[i + 1];
+                        i += 2;
+
+                        output.push_str(&format!(
+                            "{:04}    |                 {} {}\n",
+                            i - 2,
+                            is_local,
+                            index
+                        ));
                     }
+
+                    output.push_str(&format!("----End {:?}----\n", &closure.name.unwrap()));
                 }
                 OpCode::GetUpvalue => byte_instr!(output, i, opcode, self),
                 OpCode::SetUpvalue => byte_instr!(output, i, opcode, self),

@@ -2,7 +2,8 @@
 // Code is closely adapted from https://github.com/zesterer/broom
 
 use crate::error::{LoxError, Result};
-use crate::value::Value;
+use crate::object::LoxObj;
+use crate::value::ValueHandle;
 use std::collections::HashSet;
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -114,26 +115,6 @@ impl<T: fmt::Debug> Default for Heap<T> {
 // GC
 //****************************************************************************
 
-// pub trait Gc<T: fmt::Debug> {
-//     fn mark(&mut self, handle: Handle<T>) -> Result<()>;
-// }
-
-// impl Gc<Value> for Heap<Value> {
-//     fn mark(&mut self, handle: Handle<Value>) -> Result<()> {
-//         match self
-//             .get_mut(&handle)
-//             .ok_or(LoxError::_TempDevError("gc mark"))?
-//         {
-//             Value::Closure(obj) => obj.is_marked = true,
-//             Value::Str(obj) => obj.is_marked = true,
-//             Value::Upvalue(obj) => obj.is_marked = true,
-//             _ => (),
-//         }
-
-//         Ok(())
-//     }
-// }
-
 macro_rules! mark {
     ($obj:expr, $gray_stack:expr, $handle:expr) => {{
         if !$obj.is_marked {
@@ -144,18 +125,17 @@ macro_rules! mark {
 }
 
 pub fn mark_object(
-    heap: &Heap<Value>,
-    gray_stack: &mut Vec<Handle<Value>>,
-    handle: &Handle<Value>,
+    heap: &Heap<LoxObj>,
+    gray_stack: &mut Vec<ValueHandle>,
+    handle: &ValueHandle,
 ) -> Result<()> {
     match heap
         .get_mut(&handle)
         .ok_or(LoxError::_TempDevError("gc mark"))?
     {
-        Value::Closure(obj) => mark!(obj, gray_stack, handle),
-        Value::Str(obj) => mark!(obj, gray_stack, handle),
-        Value::Upvalue(obj) => mark!(obj, gray_stack, handle),
-        _ => (),
+        LoxObj::Closure(obj) => mark!(obj, gray_stack, handle),
+        LoxObj::Str(obj) => mark!(obj, gray_stack, handle),
+        LoxObj::Upvalue(obj) => mark!(obj, gray_stack, handle),
     }
 
     Ok(())
