@@ -234,51 +234,6 @@ impl Vm {
 
                     self.call_value(value, arg_count)?;
                 }
-                // OpCode::Closure => {
-                //     let closure_handle = self.fetch_const();
-
-                //     self.push(closure_handle)?;
-
-                //     let upvalue_count = match self.get_value(closure_handle)? {
-                //         Value::Closure(closure) => Ok(closure.upvalue_count),
-                //         _ => Err(LoxError::_TempDevError(
-                //             "error in closure upvalue_count match",
-                //         )),
-                //     }?;
-
-                //     for _ in 0..upvalue_count {
-                //         let is_local = self.fetch() != 0;
-                //         let index = self.fetch() as usize;
-
-                //         if is_local {
-                //             let handle = self.capture_upvalue(index);
-
-                //             match self.get_value_mut(closure_handle)? {
-                //                 Value::Closure(closure) => {
-                //                     closure.upvalues.push(handle);
-                //                 }
-                //                 _ => {
-                //                     return Err(LoxError::_TempDevError(
-                //                         "error in closure if is_local",
-                //                     ))
-                //                 }
-                //             }
-                //         } else {
-                //             let upvalue_handle = self.current_closure()?.upvalues[index];
-
-                //             match self.get_value_mut(closure_handle)? {
-                //                 Value::Closure(closure) => {
-                //                     closure.upvalues.push(upvalue_handle);
-                //                 }
-                //                 _ => {
-                //                     return Err(LoxError::_TempDevError(
-                //                         "error in closure match get_value_mut",
-                //                     ))
-                //                 }
-                //             }
-                //         }
-                //     }
-                // }
                 OpCode::Closure => {
                     let value = self.fetch_const();
                     let closure_handle = self.get_handle(&value)?;
@@ -428,21 +383,6 @@ impl Vm {
         }
     }
 
-    // fn call_value(&mut self, handle: ValueHandle, arg_count: usize) -> Result<()> {
-    //     match self.get_value(handle)? {
-    //         Value::Closure(_) => {
-    //             self.frames.push(CallFrame {
-    //                 closure: handle,
-    //                 ip: 0,
-    //                 fp: self.sp - 1 - arg_count,
-    //             });
-
-    //             Ok(())
-    //         }
-    //         _ => Err(LoxError::ValueNotCallable),
-    //     }
-    // }
-
     fn call_value(&mut self, value: Value, arg_count: usize) -> Result<()> {
         let handle = self.get_handle(&value)?;
 
@@ -542,24 +482,6 @@ impl Vm {
         }
     }
 
-    // fn push_value(&mut self, value: Value) -> Result<()> {
-    //     let handle = self.alloc(value);
-
-    //     self.push(handle)
-    // }
-
-    // fn pop(&mut self) -> Result<ValueHandle> {
-    //     if self.sp == 0 {
-    //         return Err(LoxError::StackUnderflow);
-    //     }
-
-    //     self.sp -= 1;
-
-    //     self.stack[self.sp]
-    //         .take()
-    //         .ok_or(LoxError::InternalError(Internal::CorruptedStack))
-    // }
-
     fn pop(&mut self) -> Result<Value> {
         if self.sp == 0 {
             return Err(LoxError::StackUnderflow);
@@ -584,20 +506,6 @@ impl Vm {
             value => Err(LoxError::UnexpectedValue(value)),
         }
     }
-
-    // #[inline]
-    // fn get_value(&self, handle: ValueHandle) -> Result<&Value> {
-    //     self.heap
-    //         .get(&handle)
-    //         .ok_or(LoxError::InternalError(Internal::InvalidHandle))
-    // }
-
-    // #[inline]
-    // fn get_value_mut(&mut self, handle: ValueHandle) -> Result<&mut Value> {
-    //     self.heap
-    //         .get_mut(&handle)
-    //         .ok_or(LoxError::InternalError(Internal::InvalidHandle))
-    // }
 
     #[inline]
     fn get_obj(&self, handle: ValueHandle) -> Result<&LoxObj> {
@@ -642,14 +550,11 @@ impl Vm {
 
         // mark closure objects
         for frame in &self.frames {
-            // self.heap.mark(frame.closure)?;
-            // self.mark_object(&frame.closure)?;
             mark_object(&self.heap, &mut self.gray_stack, &frame.closure)?;
         }
 
         // mark upvalues
         for (_, handle) in &self.open_upvalues {
-            // self.heap.mark(*handle)?;
             mark_object(&self.heap, &mut self.gray_stack, handle)?;
         }
 
@@ -665,53 +570,20 @@ impl Vm {
         Ok(())
     }
 
-    // fn blacken_object(&mut self, handle: ValueHandle) -> Result<()> {
-    //     match self
-    //         .heap
-    //         .get(&handle)
-    //         .ok_or(LoxError::_TempDevError("blacken_object"))?
-    //     {
-    //         Value::Upvalue(obj) => {
-    //             if let Some(upvalue_handle) = &obj.handle {
-    //                 mark_object(&self.heap, &mut self.gray_stack, upvalue_handle)?;
-    //             }
-    //         }
-    //         Value::Closure(obj) => {
-    //             if let Some(name_handle) = &obj.name {
-    //                 mark_object(&self.heap, &mut self.gray_stack, name_handle)?;
-    //             }
-
-    //             for upvalue_handle in &obj.upvalues {
-    //                 mark_object(&self.heap, &mut self.gray_stack, upvalue_handle)?;
-    //             }
-    //         }
-    //         _ => (),
-    //     }
-
-    //     Ok(())
-    // }
-
     fn blacken_object(&mut self, handle: ValueHandle) -> Result<()> {
-        // let value = self.get_obj(handle)?;
         let value = self
             .heap
             .get(&handle)
             .ok_or(LoxError::InternalError(Internal::InvalidHandle))?;
 
         match value {
-            LoxObj::Upvalue(obj) => {
-                // if let Some(Value::Obj(upvalue_handle)) = &obj.value {
-                //     mark_object(&self.heap, &mut self.gray_stack, upvalue_handle)?;
-                // }
-
-                match &obj.value {
-                    Some(Value::Obj(upvalue_handle)) => {
-                        mark_object(&self.heap, &mut self.gray_stack, upvalue_handle)?;
-                    }
-                    Some(_) => return Err(LoxError::_TempDevError("expected upvalue obj")),
-                    None => (),
+            LoxObj::Upvalue(obj) => match &obj.value {
+                Some(Value::Obj(upvalue_handle)) => {
+                    mark_object(&self.heap, &mut self.gray_stack, upvalue_handle)?;
                 }
-            }
+                Some(_) => return Err(LoxError::_TempDevError("expected upvalue obj")),
+                None => (),
+            },
             LoxObj::Closure(obj) => {
                 if let Some(name_handle) = &obj.name {
                     mark_object(&self.heap, &mut self.gray_stack, name_handle)?;
@@ -729,9 +601,6 @@ impl Vm {
 
     fn mark_table(&mut self) -> Result<()> {
         for value in self.globals.values() {
-            // self.heap.mark(*handle)?;
-            // mark_object(&self.heap, &mut self.gray_stack, handle)?;
-            // self.mark_value(value)?;
             if let Value::Obj(handle) = value {
                 mark_object(&self.heap, &mut self.gray_stack, handle)?;
             }
