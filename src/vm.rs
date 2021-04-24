@@ -590,6 +590,8 @@ impl Vm {
         for handle in &self.heap.objects {
             unimplemented!()
         }
+
+        Ok(())
     }
 
     fn collect_garbage(&mut self) -> Result<()> {
