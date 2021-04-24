@@ -586,12 +586,20 @@ impl Vm {
         Ok(())
     }
 
+    fn sweep(&mut self) -> Result<()> {
+        for handle in &self.heap.objects {
+            unimplemented!()
+        }
+    }
+
     fn collect_garbage(&mut self) -> Result<()> {
         dbg!("gc begin");
 
         self.mark_roots()?;
 
         self.trace_references()?;
+
+        self.sweep()?;
 
         dbg!("gc end");
 
