@@ -2,21 +2,22 @@ use crate::chunk::Chunk;
 use crate::value::{Value, ValueHandle};
 use std::fmt;
 
+#[derive(Debug)]
 pub enum LoxObj {
     Str(ObjString),
     Closure(ObjClosure),
     Upvalue(ObjUpvalue),
 }
 
-impl fmt::Debug for LoxObj {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            LoxObj::Str(obj) => obj.fmt(f),
-            LoxObj::Closure(obj) => obj.fmt(f),
-            LoxObj::Upvalue(obj) => obj.fmt(f),
-        }
-    }
-}
+// impl fmt::Debug for LoxObj {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         match self {
+//             LoxObj::Str(obj) => obj.fmt(f),
+//             LoxObj::Closure(obj) => obj.fmt(f),
+//             LoxObj::Upvalue(obj) => obj.fmt(f),
+//         }
+//     }
+// }
 
 pub struct ObjString {
     pub value: String,

@@ -119,6 +119,7 @@ macro_rules! mark {
     ($obj:expr, $gray_stack:expr, $handle:expr) => {{
         if !$obj.is_marked {
             $obj.is_marked = true;
+            println!("Marking {:?}", $handle);
             $gray_stack.push(*$handle);
         }
     }};

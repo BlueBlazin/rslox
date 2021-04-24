@@ -25,6 +25,25 @@ macro_rules! binary_op {
     }};
 }
 
+macro_rules! sweep_obj {
+    ($obj:expr, $handle:expr) => {{
+        let is_marked = $obj.is_marked;
+
+        if is_marked {
+            $obj.is_marked = false;
+        } else {
+            #[cfg(debug_assertions)]
+            {
+                println!("Dropping {:?}", $handle);
+            }
+
+            drop(unsafe { Box::from_raw($handle.ptr) });
+        }
+
+        is_marked
+    }};
+}
+
 pub struct CallFrame {
     pub closure: ValueHandle,
     pub ip: usize,
@@ -56,7 +75,13 @@ impl Vm {
     }
 
     pub fn interpret(&mut self, closure: ObjClosure) -> Result<()> {
-        let value = self.alloc_value(LoxObj::Closure(closure));
+        // No GC alloc
+        let handle = self.heap.insert(LoxObj::Closure(closure));
+
+        // Mark closure so it's not GCd
+        mark_object(&self.heap, &mut self.gray_stack, &handle)?;
+
+        let value = Value::Obj(handle);
 
         self.push(value)?;
 
@@ -525,6 +550,7 @@ impl Vm {
         #[cfg(debug_assertions)]
         {
             self.collect_garbage().unwrap();
+            println!("Allocing {:?}", &obj);
         }
         self.heap.insert(obj)
     }
@@ -536,6 +562,9 @@ impl Vm {
     }
 
     fn mark_roots(&mut self) -> Result<()> {
+        dbg!("mark roots start");
+
+        dbg!("marking stack variables");
         // mark stack variables
         for i in 0..self.sp {
             match &self.stack[i] {
@@ -548,18 +577,25 @@ impl Vm {
             }
         }
 
+        dbg!("marking closure objects");
         // mark closure objects
         for frame in &self.frames {
             mark_object(&self.heap, &mut self.gray_stack, &frame.closure)?;
         }
 
+        dbg!("marking upvalues");
         // mark upvalues
         for (_, handle) in &self.open_upvalues {
             mark_object(&self.heap, &mut self.gray_stack, handle)?;
         }
 
+        dbg!("marking globals");
         // mark globals
-        self.mark_table()
+        self.mark_table()?;
+
+        dbg!("mark roots end");
+
+        Ok(())
     }
 
     fn trace_references(&mut self) -> Result<()> {
@@ -589,6 +625,12 @@ impl Vm {
                     mark_object(&self.heap, &mut self.gray_stack, name_handle)?;
                 }
 
+                for value in &obj.chunk.constants {
+                    if let Value::Obj(handle) = value {
+                        mark_object(&self.heap, &mut self.gray_stack, handle)?;
+                    }
+                }
+
                 for upvalue_handle in &obj.upvalues {
                     mark_object(&self.heap, &mut self.gray_stack, upvalue_handle)?;
                 }
@@ -610,9 +652,18 @@ impl Vm {
     }
 
     fn sweep(&mut self) -> Result<()> {
-        for handle in &self.heap.objects {
-            unimplemented!()
-        }
+        self.heap.objects = self
+            .heap
+            .objects
+            .iter()
+            .filter(|&handle| match self.heap.get_mut(handle) {
+                Some(LoxObj::Closure(obj)) => sweep_obj!(obj, handle),
+                Some(LoxObj::Str(obj)) => sweep_obj!(obj, handle),
+                Some(LoxObj::Upvalue(obj)) => sweep_obj!(obj, handle),
+                _ => false,
+            })
+            .map(|handle| *handle)
+            .collect();
 
         Ok(())
     }
@@ -628,7 +679,7 @@ impl Vm {
 
         dbg!("gc end");
 
-        unimplemented!()
+        Ok(())
     }
 
     #[inline]

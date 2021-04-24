@@ -28,7 +28,17 @@ mod tests {
             return fib(n - 1) + fib(n - 2);
         }
 
-        print fib(8 * 2);
+        var x = "Hello, world!";
+        var y = "Assertial failed";
+
+        var z = fib(8 * 2);
+
+        if (z > 1000) {
+            print y;
+        } else {
+            print x + " " + "and my GC!";
+            print z;
+        }
         "#;
 
         let heap = Heap::default();
@@ -37,7 +47,8 @@ mod tests {
 
         compiler.parse().unwrap();
 
-        println!("{:?}", compiler.chunk());
+        // println!("{:?}", compiler.chunk());
+        println!("End of compilation\n");
 
         let mut vm = vm::Vm::new(compiler.heap);
         vm.interpret(compiler.function).unwrap();
