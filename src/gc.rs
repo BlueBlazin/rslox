@@ -1,5 +1,4 @@
-// Manually managed heap.
-// Code is closely adapted from https://github.com/zesterer/broom
+// Heap and Handle code is closely adapted from https://github.com/zesterer/broom
 
 use crate::error::{LoxError, Result};
 use crate::object::LoxObj;
@@ -36,6 +35,7 @@ impl<T: fmt::Debug> PartialEq<Self> for Handle<T> {
         self.ptr == other.ptr
     }
 }
+
 impl<T: fmt::Debug> Eq for Handle<T> {}
 
 impl<T: fmt::Debug> Hash for Handle<T> {

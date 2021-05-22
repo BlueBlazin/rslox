@@ -8,6 +8,15 @@ use std::collections::HashMap;
 
 const FRAMES_MAX: usize = 64;
 const STACK_MAX: usize = FRAMES_MAX * 256;
+const INITIAL_GC_THRESHOLD: usize = 1024 * 1024;
+const GC_HEAP_GROW_FACTOR: usize = 2;
+
+// To force GC to be called upon every allocation
+const DEV_GC_TESTING: bool = true;
+
+const fn lox_obj_size() -> usize {
+    std::mem::size_of::<LoxObj>()
+}
 
 macro_rules! binary_op {
     ($op:tt, $self:expr) => {{
@@ -26,7 +35,7 @@ macro_rules! binary_op {
 }
 
 macro_rules! sweep_obj {
-    ($obj:expr, $handle:expr) => {{
+    ($obj:expr, $handle:expr, $bytes_freed:expr) => {{
         let is_marked = $obj.is_marked;
 
         if is_marked {
@@ -36,6 +45,8 @@ macro_rules! sweep_obj {
             {
                 println!("Dropping {:?}", $handle);
             }
+
+            $bytes_freed += lox_obj_size();
 
             drop(unsafe { Box::from_raw($handle.ptr) });
         }
@@ -59,6 +70,8 @@ pub struct Vm {
     // TODO: use a BTreeMap instead
     open_upvalues: Vec<(usize, ValueHandle)>,
     gray_stack: Vec<ValueHandle>,
+    bytes_allocated: usize,
+    next_gc: usize,
 }
 
 impl Vm {
@@ -71,6 +84,8 @@ impl Vm {
             sp: 0,
             open_upvalues: Vec::with_capacity(8),
             gray_stack: Vec::with_capacity(8),
+            bytes_allocated: 0,
+            next_gc: INITIAL_GC_THRESHOLD,
         }
     }
 
@@ -546,12 +561,22 @@ impl Vm {
             .ok_or(LoxError::InternalError(Internal::InvalidHandle))
     }
 
-    fn alloc(&mut self, obj: LoxObj) -> ValueHandle {
-        #[cfg(debug_assertions)]
-        {
+    fn update_bytes_allocated(&mut self) {
+        self.bytes_allocated += lox_obj_size();
+
+        if self.bytes_allocated > self.next_gc {
             self.collect_garbage().unwrap();
-            println!("Allocing {:?}", &obj);
         }
+    }
+
+    fn alloc(&mut self, obj: LoxObj) -> ValueHandle {
+        if DEV_GC_TESTING && cfg!(debug_assertions) {
+            println!("Allocing {:?}", &obj);
+            self.collect_garbage().unwrap();
+        } else {
+            self.update_bytes_allocated();
+        }
+
         self.heap.insert(obj)
     }
 
@@ -651,21 +676,25 @@ impl Vm {
         Ok(())
     }
 
-    fn sweep(&mut self) -> Result<()> {
+    fn sweep(&mut self) {
+        let mut bytes_freed = 0;
+
         self.heap.objects = self
             .heap
             .objects
             .iter()
             .filter(|&handle| match self.heap.get_mut(handle) {
-                Some(LoxObj::Closure(obj)) => sweep_obj!(obj, handle),
-                Some(LoxObj::Str(obj)) => sweep_obj!(obj, handle),
-                Some(LoxObj::Upvalue(obj)) => sweep_obj!(obj, handle),
+                Some(LoxObj::Closure(obj)) => sweep_obj!(obj, handle, bytes_freed),
+                Some(LoxObj::Str(obj)) => sweep_obj!(obj, handle, bytes_freed),
+                Some(LoxObj::Upvalue(obj)) => sweep_obj!(obj, handle, bytes_freed),
                 _ => false,
             })
-            .map(|handle| *handle)
+            .copied()
             .collect();
 
-        Ok(())
+        if !(DEV_GC_TESTING && cfg!(debug_assertions)) {
+            self.bytes_allocated -= bytes_freed;
+        }
     }
 
     fn collect_garbage(&mut self) -> Result<()> {
@@ -675,7 +704,9 @@ impl Vm {
 
         self.trace_references()?;
 
-        self.sweep()?;
+        self.sweep();
+
+        self.next_gc = self.bytes_allocated * GC_HEAP_GROW_FACTOR;
 
         dbg!("gc end");
 

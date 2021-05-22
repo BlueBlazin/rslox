@@ -646,7 +646,7 @@ impl<'a> Compiler<'a> {
             return Err(LoxError::_TempDevError("too many upvalues"));
         }
 
-        upvalues.push(Upvalue { index, is_local });
+        upvalues.push(Upvalue { is_local, index });
 
         Ok(upvalues.len() as u8 - 1)
     }

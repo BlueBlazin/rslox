@@ -20,25 +20,13 @@ mod tests {
         use crate::gc::Heap;
 
         let source = r#"
-        fun fib(n) {
-            if (n < 2) {
-                return n;
-            }
+        var a = "1";
+        var b = "2";
+        var c = "3";
+        var d = "4";
+        var e = "5";
 
-            return fib(n - 1) + fib(n - 2);
-        }
-
-        var x = "Hello, world!";
-        var y = "Assertial failed";
-
-        var z = fib(8 * 2);
-
-        if (z > 1000) {
-            print y;
-        } else {
-            print x + " " + "and my GC!";
-            print z;
-        }
+        print a + b + c + d;
         "#;
 
         let heap = Heap::default();
