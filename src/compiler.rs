@@ -81,11 +81,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    pub fn compile(mut self) -> Result<()> {
-        self.parse()
-    }
-
-    pub fn parse(&mut self) -> Result<()> {
+    pub fn compile(&mut self) -> Result<()> {
         while self.peek().is_some() {
             self.declaration()?;
         }
@@ -98,7 +94,34 @@ impl<'a> Compiler<'a> {
         match self.peek() {
             Some(TokenType::Var) => self.var_declaration(),
             Some(TokenType::Fun) => self.fun_declaration(),
+            Some(TokenType::Class) => self.class_declaration(),
             _ => self.statement(),
+        }
+    }
+
+    fn class_declaration(&mut self) -> Result<()> {
+        dbg!("class_declaration");
+        self.expect(TokenType::Class)?;
+
+        match self.advance()? {
+            Some(TokenType::Ident(id)) => {
+                self.declare_variable(id.clone())?;
+
+                let handle = self.make_string(id);
+
+                let value = Value::Obj(handle);
+
+                let named_constant = self.chunk().add_constant(value)?;
+
+                self.emit_bytes(OpCode::Class as u8, named_constant);
+
+                self.define_variable(named_constant);
+
+                self.expect(TokenType::LBrace)?;
+                self.expect(TokenType::RBrace)?;
+                Ok(())
+            }
+            token => Err(LoxError::UnexpectedToken(token)),
         }
     }
 
@@ -464,7 +487,7 @@ impl<'a> Compiler<'a> {
         loop {
             match self.peek() {
                 Some(tok_type) if precedence <= tok_type.precedence() => {
-                    self.infix()?;
+                    self.infix(can_assign)?;
                 }
                 _ => break,
             }
@@ -752,6 +775,35 @@ impl<'a> Compiler<'a> {
         Ok(arg_count)
     }
 
+    fn dot(&mut self, can_assign: bool) -> Result<()> {
+        self.expect(TokenType::Dot)?;
+
+        let named_constant = match self.advance()?.ok_or(LoxError::UnexpectedEof)? {
+            TokenType::Ident(id) => {
+                let handle = self.make_string(id);
+
+                let value = Value::Obj(handle);
+
+                self.chunk().add_constant(value)?
+            }
+            token => return Err(LoxError::UnexpectedToken(Some(token))),
+        };
+
+        match self.peek() {
+            Some(TokenType::Equal) if can_assign => {
+                // consume the 'equal' token
+                self.advance()?;
+                self.expression()?;
+                self.emit_bytes(OpCode::SetProperty as u8, named_constant);
+            }
+            _ => {
+                self.emit_bytes(OpCode::GetProperty as u8, named_constant);
+            }
+        }
+
+        Ok(())
+    }
+
     fn prefix(&mut self, can_assign: bool) -> Result<()> {
         dbg!("prefix");
         match self.peek().ok_or(LoxError::UnexpectedEof)? {
@@ -765,7 +817,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn infix(&mut self) -> Result<()> {
+    fn infix(&mut self, can_assign: bool) -> Result<()> {
         dbg!("infix");
         match self.peek().ok_or(LoxError::UnexpectedEof)? {
             TokenType::Plus
@@ -781,6 +833,7 @@ impl<'a> Compiler<'a> {
             TokenType::And => self.and(),
             TokenType::Or => self.or(),
             TokenType::LParen => self.call(),
+            TokenType::Dot => self.dot(can_assign),
             _ => unimplemented!(),
         }
     }

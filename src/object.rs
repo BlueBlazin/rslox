@@ -1,12 +1,17 @@
 use crate::chunk::Chunk;
 use crate::value::{Value, ValueHandle};
+use std::collections::HashMap;
 use std::fmt;
+
+const EXPAND_CLOSURES: bool = false;
 
 #[derive(Debug)]
 pub enum LoxObj {
     Str(ObjString),
     Closure(ObjClosure),
     Upvalue(ObjUpvalue),
+    Class(ObjClass),
+    Instance(ObjInstance),
 }
 
 // impl fmt::Debug for LoxObj {
@@ -43,6 +48,10 @@ pub struct ObjClosure {
 
 impl fmt::Debug for ObjClosure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if !EXPAND_CLOSURES {
+            return write!(f, "<Lox Closure {:?}>", &self.name);
+        }
+
         let mut output = format!(
             "Lox Function {:?}()\nBytecode of {:?}:\n",
             &self
@@ -57,6 +66,7 @@ impl fmt::Debug for ObjClosure {
 
         output.push_str(&format!("{:?}", &self.chunk));
 
+        // write!(f, "Closure")
         write!(f, "{}", output)
     }
 }
@@ -70,5 +80,29 @@ pub struct ObjUpvalue {
 impl fmt::Debug for ObjUpvalue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", &self.location)
+    }
+}
+
+pub struct ObjClass {
+    pub name: String,
+    pub is_marked: bool,
+}
+
+impl fmt::Debug for ObjClass {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<Class {}>", &self.name)
+    }
+}
+
+pub struct ObjInstance {
+    // Lox Class
+    pub class: ValueHandle,
+    pub fields: HashMap<String, Value>,
+    pub is_marked: bool,
+}
+
+impl fmt::Debug for ObjInstance {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Instance of {:?}", &self.class)
     }
 }

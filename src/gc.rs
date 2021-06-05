@@ -2,8 +2,8 @@
 
 use crate::error::{LoxError, Result};
 use crate::object::LoxObj;
-use crate::value::ValueHandle;
-use std::collections::HashSet;
+use crate::value::{Value, ValueHandle};
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
@@ -137,6 +137,22 @@ pub fn mark_object(
         LoxObj::Closure(obj) => mark!(obj, gray_stack, handle),
         LoxObj::Str(obj) => mark!(obj, gray_stack, handle),
         LoxObj::Upvalue(obj) => mark!(obj, gray_stack, handle),
+        LoxObj::Class(obj) => mark!(obj, gray_stack, handle),
+        LoxObj::Instance(obj) => mark!(obj, gray_stack, handle),
+    }
+
+    Ok(())
+}
+
+pub fn mark_table(
+    heap: &Heap<LoxObj>,
+    gray_stack: &mut Vec<ValueHandle>,
+    table: &HashMap<String, Value>,
+) -> Result<()> {
+    for value in table.values() {
+        if let Value::Obj(handle) = value {
+            mark_object(heap, gray_stack, handle)?;
+        }
     }
 
     Ok(())

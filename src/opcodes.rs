@@ -29,6 +29,9 @@ pub enum OpCode {
     GetUpvalue,
     SetUpvalue,
     CloseUpvalue,
+    Class,
+    GetProperty,
+    SetProperty,
 }
 
 impl From<u8> for OpCode {
@@ -63,6 +66,9 @@ impl From<u8> for OpCode {
             0x1A => OpCode::GetUpvalue,
             0x1B => OpCode::SetUpvalue,
             0x1C => OpCode::CloseUpvalue,
+            0x1D => OpCode::Class,
+            0x1E => OpCode::GetProperty,
+            0x1F => OpCode::SetProperty,
             _ => panic!("Byte doesn't map to any opcode."),
         }
     }

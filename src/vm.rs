@@ -1,7 +1,7 @@
 use crate::chunk::Chunk;
 use crate::error::{Internal, LoxError, Result};
-use crate::gc::{mark_object, Heap};
-use crate::object::{LoxObj, ObjClosure, ObjString, ObjUpvalue};
+use crate::gc::{mark_object, mark_table, Heap};
+use crate::object::{LoxObj, ObjClass, ObjClosure, ObjInstance, ObjString, ObjUpvalue};
 use crate::opcodes::OpCode;
 use crate::value::{Value, ValueHandle};
 use std::collections::HashMap;
@@ -11,11 +11,20 @@ const STACK_MAX: usize = FRAMES_MAX * 256;
 const INITIAL_GC_THRESHOLD: usize = 1024 * 1024;
 const GC_HEAP_GROW_FACTOR: usize = 2;
 
-// To force GC to be called upon every allocation
+// To force the GC to be called upon every allocation
 const DEV_GC_TESTING: bool = true;
 
 const fn lox_obj_size() -> usize {
     std::mem::size_of::<LoxObj>()
+}
+
+macro_rules! dprintln {
+    ($($arg:tt)*) => ({
+        #[cfg(debug_assertions)]
+        {
+            println!($($arg)*)
+        }
+    })
 }
 
 macro_rules! binary_op {
@@ -41,10 +50,7 @@ macro_rules! sweep_obj {
         if is_marked {
             $obj.is_marked = false;
         } else {
-            #[cfg(debug_assertions)]
-            {
-                println!("Dropping {:?}", $handle);
-            }
+            dprintln!("Dropping {:?}", $handle);
 
             $bytes_freed += lox_obj_size();
 
@@ -364,6 +370,58 @@ impl Vm {
                     self.close_upvalues(self.sp - 1)?;
                     self.pop()?;
                 }
+                OpCode::Class => {
+                    let name = self.fetch_str_const()?;
+
+                    let lox_val = self.alloc_value(LoxObj::Class(ObjClass {
+                        name,
+                        is_marked: false,
+                    }));
+
+                    self.push(lox_val)?;
+                }
+                OpCode::GetProperty => {
+                    let name = self.fetch_str_const()?;
+
+                    // pop instance and get object
+                    let lox_obj = match self.pop()? {
+                        Value::Obj(handle) => self.get_obj(handle),
+                        _ => Err(LoxError::_TempDevError("get property")),
+                    }?;
+
+                    // get current value of property
+                    let value = match lox_obj {
+                        LoxObj::Instance(instance) => match instance.fields.get(&name) {
+                            Some(value) => Ok(*value),
+                            None => Err(LoxError::UndefinedProperty(name)),
+                        },
+                        _ => Err(LoxError::_TempDevError("get property on non-instance")),
+                    }?;
+
+                    // push value onto the stack
+                    self.push(value)?;
+                }
+                OpCode::SetProperty => {
+                    let name = self.fetch_str_const()?;
+
+                    // pop new value to be set
+                    let value = self.pop()?;
+
+                    // pop instance and get object
+                    let lox_obj = match self.pop()? {
+                        Value::Obj(handle) => self.get_obj_mut(handle),
+                        _ => Err(LoxError::_TempDevError("set property")),
+                    }?;
+
+                    // set value of field to new value
+                    match lox_obj {
+                        LoxObj::Instance(instance) => instance.fields.insert(name, value),
+                        _ => return Err(LoxError::_TempDevError("set property on non-instance")),
+                    };
+
+                    // push new value onto stack
+                    self.push(value)?;
+                }
             };
         }
 
@@ -424,7 +482,10 @@ impl Vm {
     }
 
     fn call_value(&mut self, value: Value, arg_count: usize) -> Result<()> {
-        let handle = self.get_handle(&value)?;
+        let handle = match value {
+            Value::Obj(handle) => handle,
+            _ => return Err(LoxError::ValueNotCallable),
+        };
 
         match self.get_obj(handle)? {
             LoxObj::Closure(_) => {
@@ -433,6 +494,18 @@ impl Vm {
                     ip: 0,
                     fp: self.sp - 1 - arg_count,
                 });
+
+                Ok(())
+            }
+            LoxObj::Class(_) => {
+                let lox_val = self.alloc_value(LoxObj::Instance(ObjInstance {
+                    class: handle,
+                    fields: HashMap::new(),
+                    is_marked: false,
+                }));
+
+                // TODO: this is not quite right
+                self.stack[self.sp - 1 - arg_count] = Some(lox_val);
 
                 Ok(())
             }
@@ -587,9 +660,9 @@ impl Vm {
     }
 
     fn mark_roots(&mut self) -> Result<()> {
-        dbg!("mark roots start");
+        dprintln!("mark roots start");
 
-        dbg!("marking stack variables");
+        dprintln!("marking stack variables");
         // mark stack variables
         for i in 0..self.sp {
             match &self.stack[i] {
@@ -602,23 +675,24 @@ impl Vm {
             }
         }
 
-        dbg!("marking closure objects");
+        dprintln!("marking closure objects");
         // mark closure objects
         for frame in &self.frames {
             mark_object(&self.heap, &mut self.gray_stack, &frame.closure)?;
         }
 
-        dbg!("marking upvalues");
+        dprintln!("marking upvalues");
         // mark upvalues
         for (_, handle) in &self.open_upvalues {
             mark_object(&self.heap, &mut self.gray_stack, handle)?;
         }
 
-        dbg!("marking globals");
+        dprintln!("marking globals");
         // mark globals
-        self.mark_table()?;
+        // self.mark_table()?;
+        mark_table(&self.heap, &mut self.gray_stack, &self.globals)?;
 
-        dbg!("mark roots end");
+        dprintln!("mark roots end");
 
         Ok(())
     }
@@ -631,6 +705,7 @@ impl Vm {
         Ok(())
     }
 
+    /// Rslox specific tracing for lox objects.
     fn blacken_object(&mut self, handle: ValueHandle) -> Result<()> {
         let value = self
             .heap
@@ -638,13 +713,7 @@ impl Vm {
             .ok_or(LoxError::InternalError(Internal::InvalidHandle))?;
 
         match value {
-            LoxObj::Upvalue(obj) => match &obj.value {
-                Some(Value::Obj(upvalue_handle)) => {
-                    mark_object(&self.heap, &mut self.gray_stack, upvalue_handle)?;
-                }
-                Some(_) => return Err(LoxError::_TempDevError("expected upvalue obj")),
-                None => (),
-            },
+            LoxObj::Str(_) => (),
             LoxObj::Closure(obj) => {
                 if let Some(name_handle) = &obj.name {
                     mark_object(&self.heap, &mut self.gray_stack, name_handle)?;
@@ -660,16 +729,18 @@ impl Vm {
                     mark_object(&self.heap, &mut self.gray_stack, upvalue_handle)?;
                 }
             }
-            _ => (),
-        }
+            LoxObj::Upvalue(obj) => match &obj.value {
+                Some(Value::Obj(upvalue_handle)) => {
+                    mark_object(&self.heap, &mut self.gray_stack, upvalue_handle)?;
+                }
+                Some(_) => return Err(LoxError::_TempDevError("expected upvalue obj")),
+                None => (),
+            },
+            LoxObj::Class(_) => (),
+            LoxObj::Instance(obj) => {
+                mark_object(&self.heap, &mut self.gray_stack, &obj.class)?;
 
-        Ok(())
-    }
-
-    fn mark_table(&mut self) -> Result<()> {
-        for value in self.globals.values() {
-            if let Value::Obj(handle) = value {
-                mark_object(&self.heap, &mut self.gray_stack, handle)?;
+                mark_table(&self.heap, &mut self.gray_stack, &obj.fields)?;
             }
         }
 
@@ -687,7 +758,9 @@ impl Vm {
                 Some(LoxObj::Closure(obj)) => sweep_obj!(obj, handle, bytes_freed),
                 Some(LoxObj::Str(obj)) => sweep_obj!(obj, handle, bytes_freed),
                 Some(LoxObj::Upvalue(obj)) => sweep_obj!(obj, handle, bytes_freed),
-                _ => false,
+                Some(LoxObj::Class(obj)) => sweep_obj!(obj, handle, bytes_freed),
+                Some(LoxObj::Instance(obj)) => sweep_obj!(obj, handle, bytes_freed),
+                None => panic!(), // TODO: change this to an error instead
             })
             .copied()
             .collect();
@@ -698,7 +771,7 @@ impl Vm {
     }
 
     fn collect_garbage(&mut self) -> Result<()> {
-        dbg!("gc begin");
+        dprintln!("gc begin");
 
         self.mark_roots()?;
 
@@ -708,7 +781,7 @@ impl Vm {
 
         self.next_gc = self.bytes_allocated * GC_HEAP_GROW_FACTOR;
 
-        dbg!("gc end");
+        dprintln!("gc end");
 
         Ok(())
     }

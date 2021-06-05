@@ -20,20 +20,19 @@ mod tests {
         use crate::gc::Heap;
 
         let source = r#"
-        var a = "1";
-        var b = "2";
-        var c = "3";
-        var d = "4";
-        var e = "5";
+            class Pair {}
 
-        print a + b + c + d;
+            var pair = Pair();
+            pair.first = 1;
+            pair.second = 2;
+            print pair.first + pair.second; // 3.
         "#;
 
         let heap = Heap::default();
 
         let mut compiler = compiler::Compiler::new(source.chars(), heap);
 
-        compiler.parse().unwrap();
+        compiler.compile().unwrap();
 
         // println!("{:?}", compiler.chunk());
         println!("End of compilation\n");
