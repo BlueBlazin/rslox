@@ -386,25 +386,6 @@ impl Vm {
                 OpCode::GetProperty => {
                     let name = self.fetch_str_const()?;
 
-                    // // pop instance and get object
-                    // let lox_obj = match self.pop()? {
-                    //     Value::Obj(handle) => self.get_obj(handle),
-                    //     _ => Err(LoxError::_TempDevError("get property")),
-                    // }?;
-
-                    // // get current value of property
-                    // let value = match lox_obj {
-                    //     LoxObj::Instance(instance) => match instance.fields.get(&name) {
-                    //         Some(value) => Ok(*value),
-                    //         // None => Err(LoxError::UndefinedProperty(name)),
-                    //         None => self.bind_method(instance.class, name),
-                    //     },
-                    //     _ => Err(LoxError::_TempDevError("get property on non-instance")),
-                    // }?;
-
-                    // // push value onto the stack
-                    // self.push(value)?;
-
                     let lox_obj = match self.peek()? {
                         Value::Obj(handle) => self.get_obj(handle),
                         _ => Err(LoxError::_TempDevError("get property")),

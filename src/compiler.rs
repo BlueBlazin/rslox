@@ -35,6 +35,8 @@ enum UpvaluesKind {
     Past(usize),
 }
 
+struct ClassCompiler {}
+
 pub struct Compiler<'a> {
     scanner: Peekable<Scanner<'a>>,
     pub function: ObjClosure,
@@ -44,6 +46,7 @@ pub struct Compiler<'a> {
     pub line: usize,
     pub heap: Heap<LoxObj>,
     upvalues: Vec<Upvalue>,
+    classes: Vec<ClassCompiler>,
     locals_stack: Vec<Vec<Local>>,
     upvalues_stack: Vec<Vec<Upvalue>>,
 }
@@ -77,6 +80,7 @@ impl<'a> Compiler<'a> {
             line: 0,
             heap,
             upvalues: Vec::with_capacity(u8::MAX as usize),
+            classes: vec![],
             locals_stack: vec![],
             upvalues_stack: vec![],
         }
@@ -106,6 +110,8 @@ impl<'a> Compiler<'a> {
 
         match self.advance()? {
             Some(TokenType::Ident(id)) => {
+                self.classes.push(ClassCompiler {});
+
                 self.declare_variable(id.clone())?;
 
                 let handle = self.make_string(id.clone());
@@ -133,6 +139,8 @@ impl<'a> Compiler<'a> {
                 self.expect(TokenType::RBrace)?;
 
                 self.emit_byte(OpCode::Pop as u8);
+
+                self.classes.pop();
 
                 Ok(())
             }
@@ -843,6 +851,10 @@ impl<'a> Compiler<'a> {
     }
 
     fn this(&mut self) -> Result<()> {
+        if self.classes.is_empty() {
+            return Err(LoxError::_TempDevError("this outside class"));
+        }
+
         self.variable(false)
     }
 
