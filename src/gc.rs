@@ -139,6 +139,7 @@ pub fn mark_object(
         LoxObj::Upvalue(obj) => mark!(obj, gray_stack, handle),
         LoxObj::Class(obj) => mark!(obj, gray_stack, handle),
         LoxObj::Instance(obj) => mark!(obj, gray_stack, handle),
+        LoxObj::BoundMethod(obj) => mark!(obj, gray_stack, handle),
     }
 
     Ok(())

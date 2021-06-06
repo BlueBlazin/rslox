@@ -1,7 +1,9 @@
 use crate::chunk::Chunk;
 use crate::error::{Internal, LoxError, Result};
 use crate::gc::{mark_object, mark_table, Heap};
-use crate::object::{LoxObj, ObjClass, ObjClosure, ObjInstance, ObjString, ObjUpvalue};
+use crate::object::{
+    LoxObj, ObjBoundMethod, ObjClass, ObjClosure, ObjInstance, ObjString, ObjUpvalue,
+};
 use crate::opcodes::OpCode;
 use crate::value::{Value, ValueHandle};
 use std::collections::HashMap;
@@ -384,23 +386,48 @@ impl Vm {
                 OpCode::GetProperty => {
                     let name = self.fetch_str_const()?;
 
-                    // pop instance and get object
-                    let lox_obj = match self.pop()? {
+                    // // pop instance and get object
+                    // let lox_obj = match self.pop()? {
+                    //     Value::Obj(handle) => self.get_obj(handle),
+                    //     _ => Err(LoxError::_TempDevError("get property")),
+                    // }?;
+
+                    // // get current value of property
+                    // let value = match lox_obj {
+                    //     LoxObj::Instance(instance) => match instance.fields.get(&name) {
+                    //         Some(value) => Ok(*value),
+                    //         // None => Err(LoxError::UndefinedProperty(name)),
+                    //         None => self.bind_method(instance.class, name),
+                    //     },
+                    //     _ => Err(LoxError::_TempDevError("get property on non-instance")),
+                    // }?;
+
+                    // // push value onto the stack
+                    // self.push(value)?;
+
+                    let lox_obj = match self.peek()? {
                         Value::Obj(handle) => self.get_obj(handle),
                         _ => Err(LoxError::_TempDevError("get property")),
                     }?;
 
-                    // get current value of property
-                    let value = match lox_obj {
-                        LoxObj::Instance(instance) => match instance.fields.get(&name) {
-                            Some(value) => Ok(*value),
-                            None => Err(LoxError::UndefinedProperty(name)),
-                        },
+                    let instance = match lox_obj {
+                        LoxObj::Instance(instance) => Ok(instance),
                         _ => Err(LoxError::_TempDevError("get property on non-instance")),
                     }?;
 
-                    // push value onto the stack
-                    self.push(value)?;
+                    let class = instance.class;
+                    let value = instance.fields.get(&name).copied();
+
+                    match value {
+                        Some(value) => {
+                            self.pop()?;
+                            self.push(value)?;
+                        }
+                        None => {
+                            let value = self.bind_method(class, name)?;
+                            self.push(value)?;
+                        }
+                    }
                 }
                 OpCode::SetProperty => {
                     let name = self.fetch_str_const()?;
@@ -423,10 +450,59 @@ impl Vm {
                     // push new value onto stack
                     self.push(value)?;
                 }
+                OpCode::Method => {
+                    let name = self.fetch_str_const()?;
+
+                    self.define_method(name)?;
+                }
             };
         }
 
         Ok(())
+    }
+
+    fn bind_method(&mut self, handle: ValueHandle, name: String) -> Result<Value> {
+        let class = match self.get_obj(handle)? {
+            LoxObj::Class(class) => class,
+            _ => return Err(LoxError::_TempDevError("bind method - not a class")),
+        };
+
+        let method = match class.methods.get(&name) {
+            Some(Value::Obj(handle)) => *handle,
+            Some(_) => return Err(LoxError::_TempDevError("bind method - not an obj")),
+            None => return Err(LoxError::UndefinedProperty(name)),
+        };
+
+        let receiver = self.pop()?;
+
+        let bound = self.alloc_value(LoxObj::BoundMethod(ObjBoundMethod {
+            receiver,
+            method,
+            is_marked: false,
+        }));
+
+        Ok(bound)
+    }
+
+    fn define_method(&mut self, name: String) -> Result<()> {
+        // pop closure off the stack
+        let method = self.pop()?;
+        // pop class off the stack and get inner class object
+        let value = self.pop()?;
+
+        let class = match value {
+            Value::Obj(handle) => match self.get_obj_mut(handle)? {
+                LoxObj::Class(class) => Ok(class),
+                _ => Err(LoxError::_TempDevError("define method - not a class")),
+            },
+            _ => Err(LoxError::_TempDevError("define method - not an object")),
+        }?;
+
+        class.methods.insert(name, method);
+
+        // push class back on the stack for the next method (if any) or the final
+        // pop instruction
+        self.push(value)
     }
 
     fn close_upvalues(&mut self, last: usize) -> Result<()> {
@@ -507,6 +583,21 @@ impl Vm {
 
                 // TODO: this is not quite right
                 self.stack[self.sp - 1 - arg_count] = Some(lox_val);
+
+                Ok(())
+            }
+            LoxObj::BoundMethod(ObjBoundMethod {
+                method, receiver, ..
+            }) => {
+                let closure = *method;
+
+                self.stack[self.sp - 1 - arg_count] = Some(*receiver);
+
+                self.frames.push(CallFrame {
+                    closure,
+                    ip: 0,
+                    fp: self.sp - 1 - arg_count,
+                });
 
                 Ok(())
             }
@@ -608,7 +699,7 @@ impl Vm {
             .ok_or(LoxError::InternalError(Internal::CorruptedStack))
     }
 
-    fn peek(&mut self) -> Result<Value> {
+    fn peek(&self) -> Result<Value> {
         self.stack[self.sp - 1].ok_or(LoxError::InternalError(Internal::CorruptedStack))
     }
 
@@ -745,6 +836,16 @@ impl Vm {
 
                 mark_table(&self.heap, &mut self.gray_stack, &obj.fields)?;
             }
+            LoxObj::BoundMethod(obj) => {
+                mark_object(&self.heap, &mut self.gray_stack, &obj.method)?;
+
+                match &obj.receiver {
+                    Value::Obj(handle) => {
+                        mark_object(&self.heap, &mut self.gray_stack, handle)?;
+                    }
+                    _ => (),
+                }
+            }
         }
 
         Ok(())
@@ -763,6 +864,7 @@ impl Vm {
                 Some(LoxObj::Upvalue(obj)) => sweep_obj!(obj, handle, bytes_freed),
                 Some(LoxObj::Class(obj)) => sweep_obj!(obj, handle, bytes_freed),
                 Some(LoxObj::Instance(obj)) => sweep_obj!(obj, handle, bytes_freed),
+                Some(LoxObj::BoundMethod(obj)) => sweep_obj!(obj, handle, bytes_freed),
                 None => panic!(), // TODO: change this to an error instead
             })
             .copied()

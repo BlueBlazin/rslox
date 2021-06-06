@@ -12,6 +12,7 @@ pub enum LoxObj {
     Upvalue(ObjUpvalue),
     Class(ObjClass),
     Instance(ObjInstance),
+    BoundMethod(ObjBoundMethod),
 }
 
 // impl fmt::Debug for LoxObj {
@@ -105,5 +106,19 @@ pub struct ObjInstance {
 impl fmt::Debug for ObjInstance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Instance of {:?}", &self.class)
+    }
+}
+
+pub struct ObjBoundMethod {
+    // Lox Instance
+    pub receiver: Value,
+    // Lox Closure
+    pub method: ValueHandle,
+    pub is_marked: bool,
+}
+
+impl fmt::Debug for ObjBoundMethod {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Bound Method")
     }
 }

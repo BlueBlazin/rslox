@@ -17,10 +17,11 @@ struct Local {
     is_captured: bool,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 enum FunctionType {
     Function,
     Script,
+    Method,
 }
 
 #[derive(Clone, Debug)]
@@ -107,7 +108,7 @@ impl<'a> Compiler<'a> {
             Some(TokenType::Ident(id)) => {
                 self.declare_variable(id.clone())?;
 
-                let handle = self.make_string(id);
+                let handle = self.make_string(id.clone());
 
                 let value = Value::Obj(handle);
 
@@ -117,8 +118,40 @@ impl<'a> Compiler<'a> {
 
                 self.define_variable(named_constant);
 
+                self.named_variable(TokenType::Ident(id), false)?;
+
+                // Class body
                 self.expect(TokenType::LBrace)?;
+
+                loop {
+                    match self.peek() {
+                        Some(TokenType::RBrace) | None => break,
+                        Some(_) => self.method()?,
+                    }
+                }
+
                 self.expect(TokenType::RBrace)?;
+
+                self.emit_byte(OpCode::Pop as u8);
+
+                Ok(())
+            }
+            token => Err(LoxError::UnexpectedToken(token)),
+        }
+    }
+
+    fn method(&mut self) -> Result<()> {
+        match self.advance()? {
+            Some(TokenType::Ident(id)) => {
+                // TODO: refactor this into its own function
+                let handle = self.make_string(id.clone());
+                let value = Value::Obj(handle);
+                let named_constant = self.chunk().add_constant(value)?;
+
+                self.function(id, FunctionType::Method)?;
+
+                self.emit_bytes(OpCode::Method as u8, named_constant);
+
                 Ok(())
             }
             token => Err(LoxError::UnexpectedToken(token)),
@@ -135,16 +168,16 @@ impl<'a> Compiler<'a> {
         // the global scope.
         self.mark_initialized();
 
-        self.function(name)?;
+        self.function(name, FunctionType::Function)?;
 
         self.define_variable(global);
 
         Ok(())
     }
 
-    fn function(&mut self, name: String) -> Result<()> {
+    fn function(&mut self, name: String, fun_type: FunctionType) -> Result<()> {
         dbg!("function");
-        let mut closure_obj = self.with_function_ctx(name, &mut |this| {
+        let mut closure_obj = self.with_function_ctx(name, fun_type, &mut |this| {
             this.begin_scope();
 
             this.parse_parameters()?;
@@ -588,46 +621,51 @@ impl<'a> Compiler<'a> {
         self.named_variable(name, can_assign)
     }
 
+    /// Emits the appropriate instruction to push named variable onto stack
+    ///  1. If variable is local then finds its stack idx
+    ///  2. If variable is global then finds its constants table idx
+    ///  3. If variable is a closed upvalue then finds the upvalue idx
     fn named_variable(&mut self, name: TokenType, can_assign: bool) -> Result<()> {
         dbg!("named_variable");
-        match name {
-            TokenType::Ident(value) => {
-                let arg;
-                let get_op;
-                let set_op;
-
-                if let Some(idx) = self.resolve_local(&value)? {
-                    arg = idx;
-                    get_op = OpCode::GetLocal;
-                    set_op = OpCode::SetLocal;
-                } else if let Some(idx) = self.resolve_upvalue(&value)? {
-                    arg = idx;
-                    get_op = OpCode::GetUpvalue;
-                    set_op = OpCode::SetUpvalue;
-                } else {
-                    let handle = self.make_string(value);
-
-                    let value = Value::Obj(handle);
-
-                    arg = self.chunk().add_constant(value)?;
-                    get_op = OpCode::GetGlobal;
-                    set_op = OpCode::SetGlobal;
-                }
-
-                match self.peek() {
-                    Some(TokenType::Equal) if can_assign => {
-                        self.advance()?;
-                        self.expression()?;
-
-                        self.emit_bytes(set_op as u8, arg);
-                    }
-                    _ => self.emit_bytes(get_op as u8, arg),
-                }
-
-                Ok(())
-            }
+        let value = match name {
+            TokenType::Ident(value) => Ok(value),
+            TokenType::This => Ok("this".to_owned()),
             token => Err(LoxError::UnexpectedToken(Some(token))),
+        }?;
+
+        let arg;
+        let get_op;
+        let set_op;
+
+        if let Some(idx) = self.resolve_local(&value)? {
+            arg = idx;
+            get_op = OpCode::GetLocal;
+            set_op = OpCode::SetLocal;
+        } else if let Some(idx) = self.resolve_upvalue(&value)? {
+            arg = idx;
+            get_op = OpCode::GetUpvalue;
+            set_op = OpCode::SetUpvalue;
+        } else {
+            let handle = self.make_string(value);
+
+            let value = Value::Obj(handle);
+
+            arg = self.chunk().add_constant(value)?;
+            get_op = OpCode::GetGlobal;
+            set_op = OpCode::SetGlobal;
         }
+
+        match self.peek() {
+            Some(TokenType::Equal) if can_assign => {
+                self.advance()?;
+                self.expression()?;
+
+                self.emit_bytes(set_op as u8, arg);
+            }
+            _ => self.emit_bytes(get_op as u8, arg),
+        }
+
+        Ok(())
     }
 
     fn resolve_local(&mut self, name: &str) -> Result<Option<u8>> {
@@ -804,6 +842,10 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
+    fn this(&mut self) -> Result<()> {
+        self.variable(false)
+    }
+
     fn prefix(&mut self, can_assign: bool) -> Result<()> {
         dbg!("prefix");
         match self.peek().ok_or(LoxError::UnexpectedEof)? {
@@ -813,6 +855,7 @@ impl<'a> Compiler<'a> {
             TokenType::Nil | TokenType::True | TokenType::False => self.literal(),
             TokenType::Str(_) => self.string(),
             TokenType::Ident(_) => self.variable(can_assign),
+            TokenType::This => self.this(),
             t => unimplemented!("{:?}", t),
         }
     }
@@ -849,7 +892,12 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn with_function_ctx<T>(&mut self, name: String, compile_fn: &mut T) -> Result<ObjClosure>
+    fn with_function_ctx<T>(
+        &mut self,
+        name: String,
+        fun_type: FunctionType,
+        compile_fn: &mut T,
+    ) -> Result<ObjClosure>
     where
         T: FnMut(&mut Self) -> Result<()>,
     {
@@ -857,7 +905,7 @@ impl<'a> Compiler<'a> {
 
         let old_scope_depth = mem::replace(&mut self.scope_depth, 0);
 
-        let old_fun_type = mem::replace(&mut self.fun_type, FunctionType::Function);
+        let old_fun_type = mem::replace(&mut self.fun_type, fun_type);
 
         let old_function = mem::replace(
             &mut self.function,
@@ -871,14 +919,28 @@ impl<'a> Compiler<'a> {
             },
         );
 
-        self.locals_stack.push(mem::replace(
-            &mut self.locals,
-            vec![Local {
-                depth: 0,
-                name: String::from(""),
-                is_captured: false,
-            }],
-        ));
+        match fun_type {
+            FunctionType::Function => {
+                self.locals_stack.push(mem::replace(
+                    &mut self.locals,
+                    vec![Local {
+                        depth: 0,
+                        name: String::from(""),
+                        is_captured: false,
+                    }],
+                ));
+            }
+            _ => {
+                self.locals_stack.push(mem::replace(
+                    &mut self.locals,
+                    vec![Local {
+                        depth: 0,
+                        name: String::from("this"),
+                        is_captured: false,
+                    }],
+                ));
+            }
+        }
 
         self.upvalues_stack
             .push(mem::replace(&mut self.upvalues, vec![]));

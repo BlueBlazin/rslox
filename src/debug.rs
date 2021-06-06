@@ -130,6 +130,7 @@ impl fmt::Debug for Chunk {
                 OpCode::Class => const_instr!(output, i, opcode, self),
                 OpCode::GetProperty => const_instr!(output, i, opcode, self),
                 OpCode::SetProperty => const_instr!(output, i, opcode, self),
+                OpCode::Method => const_instr!(output, i, opcode, self),
             }
 
             num += 1;
