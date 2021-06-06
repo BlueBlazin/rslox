@@ -85,6 +85,7 @@ impl fmt::Debug for ObjUpvalue {
 
 pub struct ObjClass {
     pub name: String,
+    pub methods: HashMap<String, Value>,
     pub is_marked: bool,
 }
 

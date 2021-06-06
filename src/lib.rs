@@ -20,12 +20,12 @@ mod tests {
         use crate::gc::Heap;
 
         let source = r#"
-            class Pair {}
+            fun fib(n) {
+                if (n < 2) return n;
+                return fib(n - 1) + fib(n - 2);
+            }
 
-            var pair = Pair();
-            pair.first = 1;
-            pair.second = 2;
-            print pair.first + pair.second; // 3.
+            print fib(15);
         "#;
 
         let heap = Heap::default();

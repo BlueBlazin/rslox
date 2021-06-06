@@ -375,6 +375,7 @@ impl Vm {
 
                     let lox_val = self.alloc_value(LoxObj::Class(ObjClass {
                         name,
+                        methods: HashMap::new(),
                         is_marked: false,
                     }));
 
@@ -736,7 +737,9 @@ impl Vm {
                 Some(_) => return Err(LoxError::_TempDevError("expected upvalue obj")),
                 None => (),
             },
-            LoxObj::Class(_) => (),
+            LoxObj::Class(obj) => {
+                mark_table(&self.heap, &mut self.gray_stack, &obj.methods)?;
+            }
             LoxObj::Instance(obj) => {
                 mark_object(&self.heap, &mut self.gray_stack, &obj.class)?;
 
