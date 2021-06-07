@@ -12,6 +12,7 @@ const FRAMES_MAX: usize = 64;
 const STACK_MAX: usize = FRAMES_MAX * 256;
 const INITIAL_GC_THRESHOLD: usize = 1024 * 1024;
 const GC_HEAP_GROW_FACTOR: usize = 2;
+const INIT_STRING: &str = "init";
 
 // To force the GC to be called upon every allocation
 const DEV_GC_TESTING: bool = true;
@@ -555,17 +556,21 @@ impl Vm {
 
                 Ok(())
             }
-            LoxObj::Class(_) => {
+            LoxObj::Class(ObjClass { methods, .. }) => {
                 let lox_val = self.alloc_value(LoxObj::Instance(ObjInstance {
                     class: handle,
                     fields: HashMap::new(),
                     is_marked: false,
                 }));
 
-                // TODO: this is not quite right
                 self.stack[self.sp - 1 - arg_count] = Some(lox_val);
 
-                Ok(())
+                match methods.get(INIT_STRING) {
+                    Some(value) => {
+                        return Ok(());
+                    }
+                    None => Ok(()),
+                }
             }
             LoxObj::BoundMethod(ObjBoundMethod {
                 method, receiver, ..
