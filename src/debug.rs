@@ -131,6 +131,14 @@ impl fmt::Debug for Chunk {
                 OpCode::GetProperty => const_instr!(output, i, opcode, self),
                 OpCode::SetProperty => const_instr!(output, i, opcode, self),
                 OpCode::Method => const_instr!(output, i, opcode, self),
+                OpCode::Invoke => {
+                    let constant = self.code[i + 1] as usize;
+                    let arg_count = self.code[i + 2] as usize;
+                    let handle = self.constants[constant];
+                    output.push_str(&format!("{:16?} ({}) {:4}\n", handle, arg_count, constant));
+
+                    i += 3;
+                }
             }
 
             num += 1;

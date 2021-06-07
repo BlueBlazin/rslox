@@ -854,6 +854,12 @@ impl<'a> Compiler<'a> {
                 self.expression()?;
                 self.emit_bytes(OpCode::SetProperty as u8, named_constant);
             }
+            Some(TokenType::LParen) => {
+                self.advance()?;
+                let arg_count = self.argument_list()?;
+                self.emit_bytes(OpCode::Invoke as u8, named_constant);
+                self.emit_byte(arg_count);
+            }
             _ => {
                 self.emit_bytes(OpCode::GetProperty as u8, named_constant);
             }

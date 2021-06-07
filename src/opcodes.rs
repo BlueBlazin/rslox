@@ -33,6 +33,7 @@ pub enum OpCode {
     GetProperty,
     SetProperty,
     Method,
+    Invoke,
 }
 
 impl From<u8> for OpCode {
@@ -71,6 +72,7 @@ impl From<u8> for OpCode {
             0x1E => OpCode::GetProperty,
             0x1F => OpCode::SetProperty,
             0x20 => OpCode::Method,
+            0x21 => OpCode::Invoke,
             _ => panic!("Byte doesn't map to any opcode."),
         }
     }

@@ -438,10 +438,48 @@ impl Vm {
 
                     self.define_method(name)?;
                 }
+                OpCode::Invoke => {
+                    let name = self.fetch_str_const()?;
+                    let arg_count = self.fetch() as usize;
+                    self.invoke(name, arg_count)?;
+                }
             };
         }
 
         Ok(())
+    }
+
+    fn invoke(&mut self, name: String, arg_count: usize) -> Result<()> {
+        let value = self.stack[self.sp - 1 - arg_count].ok_or(LoxError::StackUnderflow)?;
+
+        let handle = match value {
+            Value::Obj(handle) => handle,
+            _ => return Err(LoxError::_TempDevError("invoke - not an object")),
+        };
+
+        let instance = match self.get_obj(handle)? {
+            LoxObj::Instance(obj) => obj,
+            _ => return Err(LoxError::_TempDevError("invoke - not an instance")),
+        };
+
+        let class_handle = instance.class;
+
+        self.invoke_from_class(class_handle, name, arg_count)
+    }
+
+    fn invoke_from_class(
+        &mut self,
+        handle: ValueHandle,
+        name: String,
+        arg_count: usize,
+    ) -> Result<()> {
+        match self.get_obj(handle)? {
+            LoxObj::Class(ObjClass { methods, .. }) => match methods.get(&name) {
+                Some(&value) => self.call_value(value, arg_count),
+                _ => Err(LoxError::UndefinedProperty(name)),
+            },
+            _ => Err(LoxError::_TempDevError("invoke from class - not a class")),
+        }
     }
 
     fn bind_method(&mut self, handle: ValueHandle, name: String) -> Result<Value> {
