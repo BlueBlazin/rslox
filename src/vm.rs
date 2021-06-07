@@ -401,6 +401,8 @@ impl Vm {
                     let class = instance.class;
                     let value = instance.fields.get(&name).copied();
 
+                    // if value is a method then push a special 'bound method' otherwise
+                    // push the field
                     match value {
                         Some(value) => {
                             self.pop()?;
@@ -462,6 +464,12 @@ impl Vm {
             _ => return Err(LoxError::_TempDevError("invoke - not an instance")),
         };
 
+        // check if property is actually a field and not a method
+        if let Some(&value) = instance.fields.get(&name) {
+            self.stack[self.sp - 1 - arg_count] = Some(value);
+            return self.call_value(value, arg_count);
+        }
+
         let class_handle = instance.class;
 
         self.invoke_from_class(class_handle, name, arg_count)
@@ -476,7 +484,7 @@ impl Vm {
         match self.get_obj(handle)? {
             LoxObj::Class(ObjClass { methods, .. }) => match methods.get(&name) {
                 Some(&value) => self.call_value(value, arg_count),
-                _ => Err(LoxError::UndefinedProperty(name)),
+                _ => Err(LoxError::UndefinedMethod(name)),
             },
             _ => Err(LoxError::_TempDevError("invoke from class - not a class")),
         }

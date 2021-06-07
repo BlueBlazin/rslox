@@ -18,6 +18,7 @@ pub enum LoxError {
     ValueNotCallable,
     UnexpectedValue(Value),
     UndefinedProperty(String),
+    UndefinedMethod(String),
     _TempDevError(&'static str),
 }
 
