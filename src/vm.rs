@@ -8,11 +8,12 @@ use crate::opcodes::OpCode;
 use crate::value::{Value, ValueHandle};
 use std::collections::HashMap;
 
+pub static INIT_STRING: &str = "init";
+
 const FRAMES_MAX: usize = 64;
 const STACK_MAX: usize = FRAMES_MAX * 256;
 const INITIAL_GC_THRESHOLD: usize = 1024 * 1024;
 const GC_HEAP_GROW_FACTOR: usize = 2;
-const INIT_STRING: &str = "init";
 
 // To force the GC to be called upon every allocation
 const DEV_GC_TESTING: bool = true;
@@ -541,6 +542,7 @@ impl Vm {
     }
 
     fn call_value(&mut self, value: Value, arg_count: usize) -> Result<()> {
+        // TODO: ensure arg count matches function/method/init arity
         let handle = match value {
             Value::Obj(handle) => handle,
             _ => return Err(LoxError::ValueNotCallable),
@@ -556,22 +558,36 @@ impl Vm {
 
                 Ok(())
             }
-            LoxObj::Class(ObjClass { methods, .. }) => {
-                let lox_val = self.alloc_value(LoxObj::Instance(ObjInstance {
-                    class: handle,
-                    fields: HashMap::new(),
-                    is_marked: false,
-                }));
+            LoxObj::Class(ObjClass { methods, .. }) => match methods.get(INIT_STRING) {
+                Some(&value) => {
+                    let lox_val = self.alloc_value(LoxObj::Instance(ObjInstance {
+                        class: handle,
+                        fields: HashMap::new(),
+                        is_marked: false,
+                    }));
 
-                self.stack[self.sp - 1 - arg_count] = Some(lox_val);
+                    self.stack[self.sp - 1 - arg_count] = Some(lox_val);
 
-                match methods.get(INIT_STRING) {
-                    Some(value) => {
-                        return Ok(());
-                    }
-                    None => Ok(()),
+                    self.call_value(value, arg_count)
                 }
-            }
+                None => {
+                    if arg_count != 0 {
+                        return Err(LoxError::_TempDevError(
+                            "more than zero args to class without init",
+                        ));
+                    }
+
+                    let lox_val = self.alloc_value(LoxObj::Instance(ObjInstance {
+                        class: handle,
+                        fields: HashMap::new(),
+                        is_marked: false,
+                    }));
+
+                    self.stack[self.sp - 1 - arg_count] = Some(lox_val);
+
+                    Ok(())
+                }
+            },
             LoxObj::BoundMethod(ObjBoundMethod {
                 method, receiver, ..
             }) => {

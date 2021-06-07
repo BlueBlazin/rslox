@@ -20,19 +20,19 @@ mod tests {
         use crate::gc::Heap;
 
         let source = r#"
-            class Foo {
-                foo() {
-                    this.x = 7;
+            class CoffeeMaker {
+                init(coffee) {
+                    this.coffee = coffee;
                 }
-
-                bar() {
-                    print this.x;
+            
+                brew() {
+                    print "Enjoy your cup of " + this.coffee;
+                    this.coffee = nil;
                 }
             }
 
-            var foo = Foo();
-            foo.foo();
-            foo.bar();
+            var maker = CoffeeMaker("coffee and chicory");
+            maker.brew();
         "#;
 
         let heap = Heap::default();

@@ -7,6 +7,7 @@ use crate::opcodes::OpCode;
 use crate::scanner::Scanner;
 use crate::token::{Token, TokenType};
 use crate::value::{Value, ValueHandle};
+use crate::vm::INIT_STRING;
 use std::iter::Peekable;
 use std::mem;
 use std::str::Chars;
@@ -17,11 +18,12 @@ struct Local {
     is_captured: bool,
 }
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 enum FunctionType {
     Function,
     Script,
     Method,
+    Initializer,
 }
 
 #[derive(Clone, Debug)]
@@ -151,12 +153,18 @@ impl<'a> Compiler<'a> {
     fn method(&mut self) -> Result<()> {
         match self.advance()? {
             Some(TokenType::Ident(id)) => {
+                let fun_type = if &id == INIT_STRING {
+                    FunctionType::Initializer
+                } else {
+                    FunctionType::Method
+                };
+
                 // TODO: refactor this into its own function
                 let handle = self.make_string(id.clone());
                 let value = Value::Obj(handle);
                 let named_constant = self.chunk().add_constant(value)?;
 
-                self.function(id, FunctionType::Method)?;
+                self.function(id, fun_type)?;
 
                 self.emit_bytes(OpCode::Method as u8, named_constant);
 
@@ -496,6 +504,10 @@ impl<'a> Compiler<'a> {
                 self.emit_return();
             }
             _ => {
+                if self.fun_type == FunctionType::Initializer {
+                    return Err(LoxError::_TempDevError("cannot return value from init"));
+                }
+
                 self.expression()?;
 
                 self.emit_byte(OpCode::Return as u8);
@@ -942,7 +954,7 @@ impl<'a> Compiler<'a> {
                     }],
                 ));
             }
-            _ => {
+            FunctionType::Method | FunctionType::Initializer => {
                 self.locals_stack.push(mem::replace(
                     &mut self.locals,
                     vec![Local {
@@ -952,6 +964,7 @@ impl<'a> Compiler<'a> {
                     }],
                 ));
             }
+            _ => unreachable!(),
         }
 
         self.upvalues_stack
@@ -961,9 +974,10 @@ impl<'a> Compiler<'a> {
 
         self.scope_depth = old_scope_depth;
         self.locals = self.locals_stack.pop().unwrap();
-        self.fun_type = old_fun_type;
 
         self.emit_return();
+
+        self.fun_type = old_fun_type;
 
         Ok(mem::replace(&mut self.function, old_function))
     }
@@ -995,7 +1009,13 @@ impl<'a> Compiler<'a> {
     }
 
     fn emit_return(&mut self) {
-        self.emit_byte(OpCode::Nil as u8);
+        match self.fun_type {
+            FunctionType::Initializer => {
+                self.emit_bytes(OpCode::GetLocal as u8, 0);
+            }
+            _ => self.emit_byte(OpCode::Nil as u8),
+        }
+
         self.emit_byte(OpCode::Return as u8);
     }
 }
