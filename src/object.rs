@@ -7,23 +7,13 @@ const EXPAND_CLOSURES: bool = false;
 
 #[derive(Debug)]
 pub enum LoxObj {
-    Str(ObjString),
-    Closure(ObjClosure),
-    Upvalue(ObjUpvalue),
-    Class(ObjClass),
-    Instance(ObjInstance),
-    BoundMethod(ObjBoundMethod),
+    Str(Box<ObjString>),
+    Closure(Box<ObjClosure>),
+    Upvalue(Box<ObjUpvalue>),
+    Class(Box<ObjClass>),
+    Instance(Box<ObjInstance>),
+    BoundMethod(Box<ObjBoundMethod>),
 }
-
-// impl fmt::Debug for LoxObj {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         match self {
-//             LoxObj::Str(obj) => obj.fmt(f),
-//             LoxObj::Closure(obj) => obj.fmt(f),
-//             LoxObj::Upvalue(obj) => obj.fmt(f),
-//         }
-//     }
-// }
 
 pub struct ObjString {
     pub value: String,

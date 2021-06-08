@@ -99,7 +99,7 @@ impl Vm {
         }
     }
 
-    pub fn interpret(&mut self, closure: ObjClosure) -> Result<()> {
+    pub fn interpret(&mut self, closure: Box<ObjClosure>) -> Result<()> {
         // No GC alloc
         let handle = self.heap.insert(LoxObj::Closure(closure));
 
@@ -158,10 +158,11 @@ impl Vm {
                                     let mut value = String::from(&a.value);
                                     value.push_str(&b.value);
 
-                                    let lox_val = self.alloc_value(LoxObj::Str(ObjString {
-                                        value,
-                                        is_marked: false,
-                                    }));
+                                    let lox_val =
+                                        self.alloc_value(LoxObj::Str(Box::from(ObjString {
+                                            value,
+                                            is_marked: false,
+                                        })));
 
                                     self.push(lox_val)?;
                                 }
@@ -377,11 +378,11 @@ impl Vm {
                 OpCode::Class => {
                     let name = self.fetch_str_const()?;
 
-                    let lox_val = self.alloc_value(LoxObj::Class(ObjClass {
+                    let lox_val = self.alloc_value(LoxObj::Class(Box::from(ObjClass {
                         name,
                         methods: HashMap::new(),
                         is_marked: false,
-                    }));
+                    })));
 
                     self.push(lox_val)?;
                 }
@@ -530,10 +531,14 @@ impl Vm {
         arg_count: usize,
     ) -> Result<()> {
         match self.get_obj(handle)? {
-            LoxObj::Class(ObjClass { methods, .. }) => match methods.get(&name) {
-                Some(&value) => self.call_value(value, arg_count),
-                _ => Err(LoxError::UndefinedMethod(name)),
-            },
+            LoxObj::Class(class) => {
+                let methods = &class.methods;
+
+                match methods.get(&name) {
+                    Some(&value) => self.call_value(value, arg_count),
+                    _ => Err(LoxError::UndefinedMethod(name)),
+                }
+            }
             _ => Err(LoxError::_TempDevError("invoke from class - not a class")),
         }
     }
@@ -552,11 +557,11 @@ impl Vm {
 
         let receiver = self.pop()?;
 
-        let bound = self.alloc_value(LoxObj::BoundMethod(ObjBoundMethod {
+        let bound = self.alloc_value(LoxObj::BoundMethod(Box::from(ObjBoundMethod {
             receiver,
             method,
             is_marked: false,
-        }));
+        })));
 
         Ok(bound)
     }
@@ -622,11 +627,11 @@ impl Vm {
                 .map(|(_, handle)| *handle)
                 .unwrap(),
             Err(idx) => {
-                let upvalue_handle = self.alloc(LoxObj::Upvalue(ObjUpvalue {
+                let upvalue_handle = self.alloc(LoxObj::Upvalue(Box::from(ObjUpvalue {
                     location,
                     value: None,
                     is_marked: false,
-                }));
+                })));
 
                 self.open_upvalues.insert(idx, (location, upvalue_handle));
 
@@ -652,42 +657,44 @@ impl Vm {
 
                 Ok(())
             }
-            LoxObj::Class(ObjClass { methods, .. }) => match methods.get(INIT_STRING) {
-                Some(&value) => {
-                    let lox_val = self.alloc_value(LoxObj::Instance(ObjInstance {
-                        class: handle,
-                        fields: HashMap::new(),
-                        is_marked: false,
-                    }));
+            LoxObj::Class(class) => {
+                let methods = &class.methods;
 
-                    self.stack[self.sp - 1 - arg_count] = Some(lox_val);
+                match methods.get(INIT_STRING) {
+                    Some(&value) => {
+                        let lox_val = self.alloc_value(LoxObj::Instance(Box::from(ObjInstance {
+                            class: handle,
+                            fields: HashMap::new(),
+                            is_marked: false,
+                        })));
 
-                    self.call_value(value, arg_count)
-                }
-                None => {
-                    if arg_count != 0 {
-                        return Err(LoxError::_TempDevError(
-                            "more than zero args to class without init",
-                        ));
+                        self.stack[self.sp - 1 - arg_count] = Some(lox_val);
+
+                        self.call_value(value, arg_count)
                     }
+                    None => {
+                        if arg_count != 0 {
+                            return Err(LoxError::_TempDevError(
+                                "more than zero args to class without init",
+                            ));
+                        }
 
-                    let lox_val = self.alloc_value(LoxObj::Instance(ObjInstance {
-                        class: handle,
-                        fields: HashMap::new(),
-                        is_marked: false,
-                    }));
+                        let lox_val = self.alloc_value(LoxObj::Instance(Box::from(ObjInstance {
+                            class: handle,
+                            fields: HashMap::new(),
+                            is_marked: false,
+                        })));
 
-                    self.stack[self.sp - 1 - arg_count] = Some(lox_val);
+                        self.stack[self.sp - 1 - arg_count] = Some(lox_val);
 
-                    Ok(())
+                        Ok(())
+                    }
                 }
-            },
-            LoxObj::BoundMethod(ObjBoundMethod {
-                method, receiver, ..
-            }) => {
-                let closure = *method;
+            }
+            LoxObj::BoundMethod(bound_method) => {
+                let closure = bound_method.method;
 
-                self.stack[self.sp - 1 - arg_count] = Some(*receiver);
+                self.stack[self.sp - 1 - arg_count] = Some(bound_method.receiver);
 
                 self.frames.push(CallFrame {
                     closure,

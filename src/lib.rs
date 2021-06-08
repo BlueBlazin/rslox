@@ -46,6 +46,6 @@ mod tests {
         println!("End of compilation\n");
 
         let mut vm = vm::Vm::new(compiler.heap);
-        vm.interpret(compiler.function).unwrap();
+        vm.interpret(Box::from(compiler.function)).unwrap();
     }
 }

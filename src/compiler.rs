@@ -237,7 +237,7 @@ impl<'a> Compiler<'a> {
 
         closure_obj.upvalue_count = self.upvalues.len();
 
-        let handle = self.heap.insert(LoxObj::Closure(closure_obj));
+        let handle = self.heap.insert(LoxObj::Closure(Box::from(closure_obj)));
         let value = Value::Obj(handle);
         self.emit_closure(value)?;
 
@@ -1088,10 +1088,10 @@ impl<'a> Compiler<'a> {
     }
 
     fn make_string(&mut self, value: String) -> ValueHandle {
-        self.heap.insert(LoxObj::Str(ObjString {
+        self.heap.insert(LoxObj::Str(Box::from(ObjString {
             value,
             is_marked: false,
-        }))
+        })))
     }
 
     fn emit_return(&mut self) {
