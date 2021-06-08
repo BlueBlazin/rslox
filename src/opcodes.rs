@@ -34,6 +34,9 @@ pub enum OpCode {
     SetProperty,
     Method,
     Invoke,
+    Inherit,
+    GetSuper,
+    SuperInvoke,
 }
 
 impl From<u8> for OpCode {
@@ -73,6 +76,9 @@ impl From<u8> for OpCode {
             0x1F => OpCode::SetProperty,
             0x20 => OpCode::Method,
             0x21 => OpCode::Invoke,
+            0x22 => OpCode::Inherit,
+            0x23 => OpCode::GetSuper,
+            0x24 => OpCode::SuperInvoke,
             _ => panic!("Byte doesn't map to any opcode."),
         }
     }

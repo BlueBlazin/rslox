@@ -139,6 +139,9 @@ impl fmt::Debug for Chunk {
 
                     i += 3;
                 }
+                OpCode::Inherit => simple_instr!(output, i, opcode),
+                OpCode::GetSuper => const_instr!(output, i, opcode, self),
+                OpCode::SuperInvoke => const_instr!(output, i, opcode, self),
             }
 
             num += 1;

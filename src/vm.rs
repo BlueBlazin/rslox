@@ -445,6 +445,54 @@ impl Vm {
                     let arg_count = self.fetch() as usize;
                     self.invoke(name, arg_count)?;
                 }
+                OpCode::Inherit => {
+                    let subclass_value = self.pop()?;
+
+                    let superclass_value = self.peek()?;
+                    let superclass_handle = self.get_handle(&superclass_value)?;
+                    let superclass = self.get_obj(superclass_handle)?;
+
+                    let superclass_methods = match superclass {
+                        LoxObj::Class(superclass) => Ok(superclass.methods.clone()),
+                        _ => Err(LoxError::_TempDevError("superclass not a class")),
+                    }?;
+
+                    let subclass_handle = self.get_handle(&subclass_value)?;
+                    let subclass = self.get_obj_mut(subclass_handle)?;
+
+                    match subclass {
+                        LoxObj::Class(subclass) => {
+                            subclass.methods = superclass_methods;
+                        }
+                        _ => return Err(LoxError::_TempDevError("subclass not a class")),
+                    }
+                }
+                OpCode::GetSuper => {
+                    let name = self.fetch_str_const()?;
+                    let value = self.pop()?;
+
+                    match value {
+                        Value::Obj(handle) => {
+                            let value = self.bind_method(handle, name)?;
+                            self.push(value)?;
+                        }
+                        _ => {
+                            return Err(LoxError::_TempDevError("super not an object"));
+                        }
+                    }
+                }
+                OpCode::SuperInvoke => {
+                    let name = self.fetch_str_const()?;
+                    let arg_count = self.fetch() as usize;
+                    let value = self.pop()?;
+
+                    match value {
+                        Value::Obj(handle) => {
+                            self.invoke_from_class(handle, name, arg_count)?;
+                        }
+                        _ => return Err(LoxError::_TempDevError("super invoke")),
+                    }
+                }
             };
         }
 

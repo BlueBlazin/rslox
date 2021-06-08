@@ -37,7 +37,9 @@ enum UpvaluesKind {
     Past(usize),
 }
 
-struct ClassCompiler {}
+struct ClassCompiler {
+    has_superclass: bool,
+}
 
 pub struct Compiler<'a> {
     scanner: Peekable<Scanner<'a>>,
@@ -112,8 +114,6 @@ impl<'a> Compiler<'a> {
 
         match self.advance()? {
             Some(TokenType::Ident(id)) => {
-                self.classes.push(ClassCompiler {});
-
                 self.declare_variable(id.clone())?;
 
                 let handle = self.make_string(id.clone());
@@ -125,6 +125,36 @@ impl<'a> Compiler<'a> {
                 self.emit_bytes(OpCode::Class as u8, named_constant);
 
                 self.define_variable(named_constant);
+
+                // ************** super classes *******************************
+                self.classes.push(ClassCompiler {
+                    has_superclass: false,
+                });
+
+                if let Some(TokenType::Less) = self.peek() {
+                    self.advance()?;
+
+                    let name = match self.peek() {
+                        Some(TokenType::Ident(id)) => id.clone(),
+                        _ => return Err(LoxError::_TempDevError("missing superclass name")),
+                    };
+
+                    self.variable(false)?;
+
+                    if &id == &name {
+                        return Err(LoxError::_TempDevError("class cannot inherit from itself"));
+                    }
+
+                    self.begin_scope();
+                    self.add_local("super".to_owned())?;
+                    self.define_variable(0);
+
+                    self.named_variable(TokenType::Ident(id.clone()), false)?;
+                    self.emit_byte(OpCode::Inherit as u8);
+
+                    self.classes.last_mut().unwrap().has_superclass = true;
+                }
+                //*************************************************************
 
                 self.named_variable(TokenType::Ident(id), false)?;
 
@@ -141,6 +171,10 @@ impl<'a> Compiler<'a> {
                 self.expect(TokenType::RBrace)?;
 
                 self.emit_byte(OpCode::Pop as u8);
+
+                if self.classes.last().unwrap().has_superclass {
+                    self.end_scope();
+                }
 
                 self.classes.pop();
 
@@ -876,6 +910,51 @@ impl<'a> Compiler<'a> {
         self.variable(false)
     }
 
+    fn super_(&mut self) -> Result<()> {
+        if self.classes.is_empty() {
+            return Err(LoxError::_TempDevError("super outside class"));
+        }
+
+        if !self.classes.last().unwrap().has_superclass {
+            return Err(LoxError::_TempDevError(
+                "super in class that's not a subclass",
+            ));
+        }
+
+        self.expect(TokenType::Super)?;
+        self.expect(TokenType::Dot)?;
+
+        match self.advance()? {
+            Some(TokenType::Ident(id)) => {
+                let handle = self.make_string(id);
+                let value = Value::Obj(handle);
+                let named_constant = self.chunk().add_constant(value)?;
+
+                self.named_variable(TokenType::Ident("this".to_owned()), false)?;
+
+                match self.peek() {
+                    Some(TokenType::LParen) => {
+                        self.expect(TokenType::LParen)?;
+
+                        let arg_count = self.argument_list()?;
+
+                        self.named_variable(TokenType::Ident("super".to_owned()), false)?;
+
+                        self.emit_bytes(OpCode::SuperInvoke as u8, named_constant);
+                        self.emit_byte(arg_count);
+                    }
+                    _ => {
+                        self.named_variable(TokenType::Ident("super".to_owned()), false)?;
+                        self.emit_bytes(OpCode::GetSuper as u8, named_constant);
+                    }
+                }
+
+                Ok(())
+            }
+            token => Err(LoxError::UnexpectedToken(token)),
+        }
+    }
+
     fn prefix(&mut self, can_assign: bool) -> Result<()> {
         dbg!("prefix");
         match self.peek().ok_or(LoxError::UnexpectedEof)? {
@@ -886,6 +965,7 @@ impl<'a> Compiler<'a> {
             TokenType::Str(_) => self.string(),
             TokenType::Ident(_) => self.variable(can_assign),
             TokenType::This => self.this(),
+            TokenType::Super => self.super_(),
             t => unimplemented!("{:?}", t),
         }
     }

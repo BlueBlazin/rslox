@@ -20,18 +20,20 @@ mod tests {
         use crate::gc::Heap;
 
         let source = r#"
-            class Oops {
-                init() {
-                    fun f() {
-                        print "not a method";
-                    }
-                
-                    this.field = f;
+            class Doughnut {
+                finish(number) {
+                    print number;
                 }
             }
-            
-            var oops = Oops();
-            oops.field();
+
+            class Cruller < Doughnut {
+                finish(number) {
+                    super.finish(number);
+                }
+            }
+
+            var cruller = Cruller();
+            cruller.finish(42);
         "#;
 
         let heap = Heap::default();
