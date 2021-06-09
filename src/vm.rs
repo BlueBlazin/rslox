@@ -293,9 +293,7 @@ impl Vm {
 
                     let upvalue_count = match self.get_obj(closure_handle)? {
                         LoxObj::Closure(closure) => Ok(closure.upvalue_count),
-                        _ => Err(LoxError::_TempDevError(
-                            "error in closure upvalue_count match",
-                        )),
+                        _ => Err(LoxError::InternalVmError("not a closure")),
                     }?;
 
                     for _ in 0..upvalue_count {
@@ -309,11 +307,7 @@ impl Vm {
                                 LoxObj::Closure(closure) => {
                                     closure.upvalues.push(handle);
                                 }
-                                _ => {
-                                    return Err(LoxError::_TempDevError(
-                                        "error in closure if is_local",
-                                    ))
-                                }
+                                _ => return Err(LoxError::InternalVmError("not a closure")),
                             }
                         } else {
                             let upvalue_handle = self.current_closure()?.upvalues[index];
@@ -322,11 +316,7 @@ impl Vm {
                                 LoxObj::Closure(closure) => {
                                     closure.upvalues.push(upvalue_handle);
                                 }
-                                _ => {
-                                    return Err(LoxError::_TempDevError(
-                                        "error in closure match get_value_mut",
-                                    ))
-                                }
+                                _ => return Err(LoxError::InternalVmError("not a closure")),
                             }
                         }
                     }
@@ -346,7 +336,7 @@ impl Vm {
 
                             self.push(value)?;
                         }
-                        _ => return Err(LoxError::_TempDevError("get_upvalue")),
+                        _ => return Err(LoxError::InternalVmError("not an upvalue")),
                     }
                 }
                 OpCode::SetUpvalue => {
@@ -368,7 +358,7 @@ impl Vm {
                                 self.stack[upvalue.location] = Some(value);
                             }
                         },
-                        _ => return Err(LoxError::_TempDevError("set_upvalue")),
+                        _ => return Err(LoxError::InternalVmError("handle not an upvalue")),
                     }
                 }
                 OpCode::CloseUpvalue => {
@@ -391,12 +381,12 @@ impl Vm {
 
                     let lox_obj = match self.peek()? {
                         Value::Obj(handle) => self.get_obj(handle),
-                        _ => Err(LoxError::_TempDevError("get property")),
+                        _ => Err(LoxError::InternalVmError("not an object")),
                     }?;
 
                     let instance = match lox_obj {
                         LoxObj::Instance(instance) => Ok(instance),
-                        _ => Err(LoxError::_TempDevError("get property on non-instance")),
+                        _ => Err(LoxError::NonInstance),
                     }?;
 
                     let class = instance.class;
@@ -424,13 +414,13 @@ impl Vm {
                     // pop instance and get object
                     let lox_obj = match self.pop()? {
                         Value::Obj(handle) => self.get_obj_mut(handle),
-                        _ => Err(LoxError::_TempDevError("set property")),
+                        _ => Err(LoxError::InvalidObject),
                     }?;
 
                     // set value of field to new value
                     match lox_obj {
                         LoxObj::Instance(instance) => instance.fields.insert(name, value),
-                        _ => return Err(LoxError::_TempDevError("set property on non-instance")),
+                        _ => return Err(LoxError::InvalidField),
                     };
 
                     // push new value onto stack
@@ -455,7 +445,7 @@ impl Vm {
 
                     let superclass_methods = match superclass {
                         LoxObj::Class(superclass) => Ok(superclass.methods.clone()),
-                        _ => Err(LoxError::_TempDevError("superclass not a class")),
+                        _ => Err(LoxError::InvalidSuperClass),
                     }?;
 
                     let subclass_handle = self.get_handle(&subclass_value)?;
@@ -465,7 +455,7 @@ impl Vm {
                         LoxObj::Class(subclass) => {
                             subclass.methods = superclass_methods;
                         }
-                        _ => return Err(LoxError::_TempDevError("subclass not a class")),
+                        _ => return Err(LoxError::InvalidSubClass),
                     }
                 }
                 OpCode::GetSuper => {
@@ -478,7 +468,7 @@ impl Vm {
                             self.push(value)?;
                         }
                         _ => {
-                            return Err(LoxError::_TempDevError("super not an object"));
+                            return Err(LoxError::InvalidSuper);
                         }
                     }
                 }
@@ -491,7 +481,7 @@ impl Vm {
                         Value::Obj(handle) => {
                             self.invoke_from_class(handle, name, arg_count)?;
                         }
-                        _ => return Err(LoxError::_TempDevError("super invoke")),
+                        _ => return Err(LoxError::InvalidObject),
                     }
                 }
             };
@@ -505,12 +495,12 @@ impl Vm {
 
         let handle = match value {
             Value::Obj(handle) => handle,
-            _ => return Err(LoxError::_TempDevError("invoke - not an object")),
+            _ => return Err(LoxError::InvalidObject),
         };
 
         let instance = match self.get_obj(handle)? {
             LoxObj::Instance(obj) => obj,
-            _ => return Err(LoxError::_TempDevError("invoke - not an instance")),
+            _ => return Err(LoxError::InvalidObject),
         };
 
         // check if property is actually a field and not a method
@@ -539,19 +529,19 @@ impl Vm {
                     _ => Err(LoxError::UndefinedMethod(name)),
                 }
             }
-            _ => Err(LoxError::_TempDevError("invoke from class - not a class")),
+            _ => Err(LoxError::InvalidClass),
         }
     }
 
     fn bind_method(&mut self, handle: ValueHandle, name: String) -> Result<Value> {
         let class = match self.get_obj(handle)? {
             LoxObj::Class(class) => class,
-            _ => return Err(LoxError::_TempDevError("bind method - not a class")),
+            _ => return Err(LoxError::InvalidClass),
         };
 
         let method = match class.methods.get(&name) {
             Some(Value::Obj(handle)) => *handle,
-            Some(_) => return Err(LoxError::_TempDevError("bind method - not an obj")),
+            Some(_) => return Err(LoxError::InvalidObject),
             None => return Err(LoxError::UndefinedProperty(name)),
         };
 
@@ -575,9 +565,9 @@ impl Vm {
         let class = match value {
             Value::Obj(handle) => match self.get_obj_mut(handle)? {
                 LoxObj::Class(class) => Ok(class),
-                _ => Err(LoxError::_TempDevError("define method - not a class")),
+                _ => Err(LoxError::InvalidClass),
             },
-            _ => Err(LoxError::_TempDevError("define method - not an object")),
+            _ => Err(LoxError::InvalidObject),
         }?;
 
         class.methods.insert(name, method);
@@ -601,13 +591,12 @@ impl Vm {
                         break;
                     }
 
-                    let value = self.stack[location]
-                        .ok_or(LoxError::_TempDevError("close_upvalues StackUnderflow"))?;
+                    let value = self.stack[location].ok_or(LoxError::StackUnderflow)?;
 
                     upvalue.value = Some(value);
                     self.open_upvalues.pop();
                 }
-                _ => return Err(LoxError::_TempDevError("close_upvalues get_value_mut")),
+                _ => return Err(LoxError::InvalidUpvalue),
             }
         }
 
@@ -674,7 +663,7 @@ impl Vm {
                     }
                     None => {
                         if arg_count != 0 {
-                            return Err(LoxError::_TempDevError(
+                            return Err(LoxError::InvalidArguments(
                                 "more than zero args to class without init",
                             ));
                         }
@@ -711,7 +700,7 @@ impl Vm {
     fn get_handle(&self, value: &Value) -> Result<ValueHandle> {
         match value {
             Value::Obj(handle) => Ok(*handle),
-            _ => Err(LoxError::_TempDevError("get_handle")),
+            _ => Err(LoxError::InvalidObject),
         }
     }
 
@@ -928,7 +917,7 @@ impl Vm {
                 Some(Value::Obj(upvalue_handle)) => {
                     mark_object(&self.heap, &mut self.gray_stack, upvalue_handle)?;
                 }
-                Some(_) => return Err(LoxError::_TempDevError("expected upvalue obj")),
+                Some(_) => return Err(LoxError::InvalidUpvalue),
                 None => (),
             },
             LoxObj::Class(obj) => {

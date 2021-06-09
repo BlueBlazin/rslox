@@ -130,10 +130,7 @@ pub fn mark_object(
     gray_stack: &mut Vec<ValueHandle>,
     handle: &ValueHandle,
 ) -> Result<()> {
-    match heap
-        .get_mut(&handle)
-        .ok_or(LoxError::_TempDevError("gc mark"))?
-    {
+    match heap.get_mut(&handle).ok_or(LoxError::InvalidHandle)? {
         LoxObj::Closure(obj) => mark!(obj, gray_stack, handle),
         LoxObj::Str(obj) => mark!(obj, gray_stack, handle),
         LoxObj::Upvalue(obj) => mark!(obj, gray_stack, handle),

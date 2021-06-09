@@ -136,13 +136,13 @@ impl<'a> Compiler<'a> {
 
                     let name = match self.peek() {
                         Some(TokenType::Ident(id)) => id.clone(),
-                        _ => return Err(LoxError::_TempDevError("missing superclass name")),
+                        _ => return Err(LoxError::CompileError("missing superclass name")),
                     };
 
                     self.variable(false)?;
 
                     if &id == &name {
-                        return Err(LoxError::_TempDevError("class cannot inherit from itself"));
+                        return Err(LoxError::CompileError("class cannot inherit from itself"));
                     }
 
                     self.begin_scope();
@@ -262,7 +262,7 @@ impl<'a> Compiler<'a> {
                     self.function.arity += 1;
 
                     if self.function.arity > 255 {
-                        return Err(LoxError::CompileError);
+                        return Err(LoxError::CompileError("parameters exceed limit of 255"));
                     }
 
                     let param_const = self.parse_variable()?;
@@ -359,7 +359,7 @@ impl<'a> Compiler<'a> {
             }
 
             if name == local.name {
-                return Err(LoxError::CompileError);
+                return Err(LoxError::CompileError("variable with name already exists"));
             }
         }
 
@@ -495,7 +495,7 @@ impl<'a> Compiler<'a> {
         let jump = self.chunk().code.len() - offset - 2;
 
         if jump > std::u16::MAX as usize {
-            return Err(LoxError::CompileError);
+            return Err(LoxError::InternalCompilerError);
         }
 
         self.chunk().code[offset] = ((jump as u16 >> 8) & 0xFF) as u8;
@@ -528,7 +528,7 @@ impl<'a> Compiler<'a> {
 
     fn return_statement(&mut self) -> Result<()> {
         if self.fun_type == FunctionType::Script {
-            return Err(LoxError::CompileError);
+            return Err(LoxError::CompileError("invalid return"));
         }
 
         self.expect(TokenType::Return)?;
@@ -539,7 +539,7 @@ impl<'a> Compiler<'a> {
             }
             _ => {
                 if self.fun_type == FunctionType::Initializer {
-                    return Err(LoxError::_TempDevError("cannot return value from init"));
+                    return Err(LoxError::CompileError("cannot return value from init"));
                 }
 
                 self.expression()?;
@@ -730,7 +730,7 @@ impl<'a> Compiler<'a> {
         for (idx, local) in locals.iter().enumerate().rev() {
             if local.name == name {
                 if local.depth == -1 {
-                    return Err(LoxError::CompileError);
+                    return Err(LoxError::CompileError("local variable"));
                 }
 
                 return Ok(Some(idx as u8));
@@ -758,7 +758,7 @@ impl<'a> Compiler<'a> {
         }
 
         if upvalues.len() >= u8::MAX as usize {
-            return Err(LoxError::_TempDevError("too many upvalues"));
+            return Err(LoxError::CompileError("too many upvalues"));
         }
 
         upvalues.push(Upvalue { is_local, index });
@@ -846,7 +846,7 @@ impl<'a> Compiler<'a> {
                 Some(TokenType::RParen) | None => break,
                 _ => {
                     if arg_count == 255 {
-                        return Err(LoxError::CompileError);
+                        return Err(LoxError::CompileError("too many arguments"));
                     }
 
                     self.expression()?;
@@ -904,7 +904,7 @@ impl<'a> Compiler<'a> {
 
     fn this(&mut self) -> Result<()> {
         if self.classes.is_empty() {
-            return Err(LoxError::_TempDevError("this outside class"));
+            return Err(LoxError::CompileError("`this` used outside class"));
         }
 
         self.variable(false)
@@ -912,12 +912,12 @@ impl<'a> Compiler<'a> {
 
     fn super_(&mut self) -> Result<()> {
         if self.classes.is_empty() {
-            return Err(LoxError::_TempDevError("super outside class"));
+            return Err(LoxError::CompileError("`super` used outside class"));
         }
 
         if !self.classes.last().unwrap().has_superclass {
-            return Err(LoxError::_TempDevError(
-                "super in class that's not a subclass",
+            return Err(LoxError::CompileError(
+                "`super` used in class that's not a subclass",
             ));
         }
 
@@ -1140,7 +1140,7 @@ impl<'a> Codegen for Compiler<'a> {
         let offset = self.chunk().code.len() - loop_start + 2;
 
         if offset > std::u16::MAX as usize {
-            return Err(LoxError::CompileError);
+            return Err(LoxError::InternalCompilerError);
         }
 
         self.emit_byte(((offset >> 8) & 0xFF) as u8);

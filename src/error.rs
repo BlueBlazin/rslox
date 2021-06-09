@@ -3,7 +3,8 @@ use crate::value::Value;
 
 #[derive(Debug)]
 pub enum LoxError {
-    CompileError,
+    CompileError(&'static str),
+    InternalCompilerError,
     RuntimeError,
     StackOverflow,
     StackUnderflow,
@@ -19,7 +20,17 @@ pub enum LoxError {
     UnexpectedValue(Value),
     UndefinedProperty(String),
     UndefinedMethod(String),
-    _TempDevError(&'static str),
+    NonInstance,
+    InvalidObject,
+    InvalidField,
+    InvalidClass,
+    InvalidSuperClass,
+    InvalidSubClass,
+    InvalidSuper,
+    InvalidUpvalue,
+    InvalidArguments(&'static str),
+    InternalVmError(&'static str),
+    InvalidHandle,
 }
 
 #[derive(Debug)]

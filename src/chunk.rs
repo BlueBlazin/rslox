@@ -15,7 +15,7 @@ impl Chunk {
 
     pub fn add_constant(&mut self, value: Value) -> Result<u8> {
         if self.constants.len() >= 256 {
-            return Err(LoxError::CompileError);
+            return Err(LoxError::CompileError("too many constants"));
         }
         self.constants.push(value);
         Ok(self.constants.len() as u8 - 1)
