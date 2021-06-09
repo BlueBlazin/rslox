@@ -1,5 +1,6 @@
 use crate::chunk::Chunk;
 use crate::codegen::Codegen;
+use crate::dprintln;
 use crate::error::{LoxError, Result};
 use crate::gc::Heap;
 use crate::object::{LoxObj, ObjClosure, ObjString};
@@ -99,7 +100,7 @@ impl<'a> Compiler<'a> {
     }
 
     pub fn declaration(&mut self) -> Result<()> {
-        dbg!("declaration");
+        dprintln!("declaration");
         match self.peek() {
             Some(TokenType::Var) => self.var_declaration(),
             Some(TokenType::Fun) => self.fun_declaration(),
@@ -109,7 +110,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn class_declaration(&mut self) -> Result<()> {
-        dbg!("class_declaration");
+        dprintln!("class_declaration");
         self.expect(TokenType::Class)?;
 
         match self.advance()? {
@@ -209,7 +210,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn fun_declaration(&mut self) -> Result<()> {
-        dbg!("fun_declaration");
+        dprintln!("fun_declaration");
         self.expect(TokenType::Fun)?;
 
         let (global, name) = self.parse_function_name()?;
@@ -226,7 +227,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn function(&mut self, name: String, fun_type: FunctionType) -> Result<()> {
-        dbg!("function");
+        dprintln!("function");
         let mut closure_obj = self.with_function_ctx(name, fun_type, &mut |this| {
             this.begin_scope();
 
@@ -252,7 +253,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn parse_parameters(&mut self) -> Result<()> {
-        dbg!("parse_parameters");
+        dprintln!("parse_parameters");
         self.expect(TokenType::LParen)?;
 
         loop {
@@ -285,7 +286,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn var_declaration(&mut self) -> Result<()> {
-        dbg!("var_declaration");
+        dprintln!("var_declaration");
         self.expect(TokenType::Var)?;
 
         // const_idx is the location in the constants array
@@ -327,7 +328,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn parse_variable(&mut self) -> Result<u8> {
-        dbg!("parse_variable");
+        dprintln!("parse_variable");
         match self.advance()? {
             Some(TokenType::Ident(id)) => {
                 self.declare_variable(id.clone())?;
@@ -381,7 +382,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn define_variable(&mut self, const_idx: u8) {
-        dbg!("define_variable");
+        dprintln!("define_variable");
         if self.scope_depth <= 0 {
             self.emit_bytes(OpCode::DefineGlobal as u8, const_idx);
         } else {
@@ -400,7 +401,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn statement(&mut self) -> Result<()> {
-        dbg!("statement");
+        dprintln!("statement");
         match self.peek() {
             Some(TokenType::Print) => self.print_statement(),
             Some(TokenType::LBrace) => {
@@ -426,7 +427,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn block(&mut self) -> Result<()> {
-        dbg!("block");
+        dprintln!("block");
         self.expect(TokenType::LBrace)?;
 
         loop {
@@ -552,7 +553,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn expr_statement(&mut self) -> Result<()> {
-        dbg!("expr_statement");
+        dprintln!("expr_statement");
         self.expression()?;
         self.expect(TokenType::Semicolon)?;
 
@@ -561,12 +562,12 @@ impl<'a> Compiler<'a> {
     }
 
     pub fn expression(&mut self) -> Result<()> {
-        dbg!("expression");
+        dprintln!("expression");
         self.parse_precedence(TokenType::Equal.precedence())
     }
 
     fn parse_precedence(&mut self, precedence: usize) -> Result<()> {
-        dbg!("parse_precedence");
+        dprintln!("parse_precedence");
         let can_assign = precedence <= TokenType::Equal.precedence();
 
         self.prefix(can_assign)?;
@@ -589,7 +590,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn binary(&mut self) -> Result<()> {
-        dbg!("binary");
+        dprintln!("binary");
         let op = self.advance()?.ok_or(LoxError::UnexpectedEof)?;
 
         self.parse_precedence(op.precedence() + 1)?;
@@ -634,7 +635,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn number(&mut self) -> Result<()> {
-        dbg!("number");
+        dprintln!("number");
         match self.advance()? {
             Some(TokenType::Num(n)) => {
                 self.emit_const(Value::Number(n))?;
@@ -670,7 +671,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn variable(&mut self, can_assign: bool) -> Result<()> {
-        dbg!("variable");
+        dprintln!("variable");
         let name = self.advance()?.ok_or(LoxError::UnexpectedEof)?;
         self.named_variable(name, can_assign)
     }
@@ -680,7 +681,7 @@ impl<'a> Compiler<'a> {
     ///  2. If variable is global then finds its constants table idx
     ///  3. If variable is a closed upvalue then finds the upvalue idx
     fn named_variable(&mut self, name: TokenType, can_assign: bool) -> Result<()> {
-        dbg!("named_variable");
+        dprintln!("named_variable");
         let value = match name {
             TokenType::Ident(value) => Ok(value),
             TokenType::This => Ok("this".to_owned()),
@@ -956,7 +957,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn prefix(&mut self, can_assign: bool) -> Result<()> {
-        dbg!("prefix");
+        dprintln!("prefix");
         match self.peek().ok_or(LoxError::UnexpectedEof)? {
             TokenType::LParen => self.grouping(),
             TokenType::Minus | TokenType::Bang => self.unary(),
@@ -971,7 +972,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn infix(&mut self, can_assign: bool) -> Result<()> {
-        dbg!("infix");
+        dprintln!("infix");
         match self.peek().ok_or(LoxError::UnexpectedEof)? {
             TokenType::Plus
             | TokenType::Minus
@@ -1120,7 +1121,7 @@ impl<'a> Codegen for Compiler<'a> {
     }
 
     fn emit_closure(&mut self, value: Value) -> Result<()> {
-        dbg!("emit_closure");
+        dprintln!("emit_closure");
         let const_idx = self.chunk().add_constant(value)?;
         self.emit_bytes(OpCode::Closure as u8, const_idx);
         Ok(())

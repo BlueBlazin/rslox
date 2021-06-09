@@ -11,6 +11,18 @@ mod token;
 mod value;
 pub mod vm;
 
+pub fn interpret(source: String) -> Result<(), error::LoxError> {
+    let heap = gc::Heap::default();
+
+    let mut compiler = compiler::Compiler::new(source.chars(), heap);
+
+    compiler.compile()?;
+
+    let mut vm = vm::Vm::new(compiler.heap);
+
+    vm.interpret(Box::from(compiler.function))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

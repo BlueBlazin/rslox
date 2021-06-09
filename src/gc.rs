@@ -1,5 +1,6 @@
 // Heap and Handle code is closely adapted from https://github.com/zesterer/broom
 
+use crate::dprintln;
 use crate::error::{LoxError, Result};
 use crate::object::LoxObj;
 use crate::value::{Value, ValueHandle};
@@ -119,7 +120,7 @@ macro_rules! mark {
     ($obj:expr, $gray_stack:expr, $handle:expr) => {{
         if !$obj.is_marked {
             $obj.is_marked = true;
-            println!("Marking {:?}", $handle);
+            dprintln!("Marking {:?}", $handle);
             $gray_stack.push(*$handle);
         }
     }};

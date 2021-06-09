@@ -22,6 +22,7 @@ const fn lox_obj_size() -> usize {
     std::mem::size_of::<LoxObj>()
 }
 
+#[macro_export]
 macro_rules! dprintln {
     ($($arg:tt)*) => ({
         #[cfg(debug_assertions)]
